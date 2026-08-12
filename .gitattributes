@@ -1,2 +1,2 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Нормализовать окончания строк во всех файлах, которые Git считает текстовыми.
+* text=auto eol=lf
