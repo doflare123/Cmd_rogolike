@@ -25,7 +25,6 @@ internal sealed class AsciiDungeonRenderer
 	public void Draw(
 		Node2D canvas,
 		DungeonMap map,
-		Vector2I player,
 		string status,
 		Vector2 viewportSize,
 		AsciiRenderOptions options)
@@ -33,7 +32,7 @@ internal sealed class AsciiDungeonRenderer
 		canvas.DrawRect(new Rect2(Vector2.Zero, viewportSize), BackgroundColor);
 		Font font = ThemeDB.FallbackFont;
 		DrawHeader(canvas, font, map);
-		DrawMap(canvas, font, map, player, viewportSize, options);
+		DrawMap(canvas, font, map, viewportSize, options);
 		canvas.DrawString(
 			font,
 			new Vector2(Padding, viewportSize.Y - 9),
@@ -46,7 +45,9 @@ internal sealed class AsciiDungeonRenderer
 
 	private static void DrawHeader(Node2D canvas, Font font, DungeonMap map)
 	{
-		string info = $"SEED {map.Seed}   AREAS {map.RegionCount}   ENEMIES {map.EnemyCount}   OPENED {map.OpenedDoorCount}";
+		PlayerCharacter player = map.Player;
+		string info = $"{player.Name} HP {player.Health}/{player.MaxHealth}   SEED {map.Seed}   "
+			+ $"AREAS {map.RegionCount}   ENEMIES {map.EnemyCount}   OPENED {map.OpenedDoorCount}";
 		canvas.DrawString(
 			font,
 			new Vector2(Padding, 21),
@@ -69,20 +70,19 @@ internal sealed class AsciiDungeonRenderer
 		Node2D canvas,
 		Font font,
 		DungeonMap map,
-		Vector2I player,
 		Vector2 viewportSize,
 		AsciiRenderOptions options)
 	{
 		int columns = Math.Max(1, (int)((viewportSize.X - (Padding * 2)) / options.CellWidth));
 		int rows = Math.Max(1, (int)((viewportSize.Y - HeaderHeight - FooterHeight) / options.CellHeight));
-		Vector2I firstTile = player - new Vector2I(columns / 2, rows / 2);
+		Vector2I firstTile = map.Player.Position - new Vector2I(columns / 2, rows / 2);
 
 		for (int screenY = 0; screenY < rows; screenY++)
 		{
 			for (int screenX = 0; screenX < columns; screenX++)
 			{
 				Vector2I worldPosition = firstTile + new Vector2I(screenX, screenY);
-				(string symbol, Color color) = GetAppearance(map, worldPosition, player);
+				(string symbol, Color color) = GetAppearance(map, worldPosition);
 
 				if (symbol.Length == 0)
 				{
@@ -106,15 +106,15 @@ internal sealed class AsciiDungeonRenderer
 
 	private static (string Symbol, Color Color) GetAppearance(
 		DungeonMap map,
-		Vector2I position,
-		Vector2I player)
+		Vector2I position)
 	{
-		if (position == player)
+		DungeonEntity? entity = map.GetEntityAt(position);
+		if (entity is PlayerCharacter)
 		{
 			return ("@", PlayerColor);
 		}
 
-		if (map.GetEntityAt(position) is Enemy)
+		if (entity is Enemy)
 		{
 			return ("e", EnemyColor);
 		}

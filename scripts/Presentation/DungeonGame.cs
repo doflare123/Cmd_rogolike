@@ -36,7 +36,6 @@ public partial class DungeonGame : Node2D
 
 	private readonly AsciiDungeonRenderer _renderer = new();
 	private DungeonMap _map = null!;
-	private Vector2I _player;
 	private string _status = string.Empty;
 
 	public override void _Ready()
@@ -52,7 +51,7 @@ public partial class DungeonGame : Node2D
 			return;
 		}
 
-		if (GetMovement(key.Keycode) is Vector2I movement)
+		if (GetMovement(key.Keycode) is CardinalDirection movement)
 		{
 			TryMove(movement);
 			GetViewport().SetInputAsHandled();
@@ -83,7 +82,6 @@ public partial class DungeonGame : Node2D
 		_renderer.Draw(
 			this,
 			_map,
-			_player,
 			_status,
 			GetViewportRect().Size,
 			new AsciiRenderOptions(FontSize, CellWidth, CellHeight));
@@ -101,79 +99,66 @@ public partial class DungeonGame : Node2D
 			maximumEnemiesPerRoom: MaximumEnemiesPerRoom);
 
 		_map = new DungeonMap(seed, options);
-		_player = _map.PlayerStart;
 		_status = "Новый мир. Упритесь в + или нажмите E рядом с дверью.";
 		QueueRedraw();
 	}
 
-	private void TryMove(Vector2I direction)
+	private void TryMove(CardinalDirection direction)
 	{
-		Vector2I destination = _player + direction;
-		DungeonTile tile = _map.GetTile(destination);
-
-		if (tile == DungeonTile.ClosedDoor)
+		PlayerMoveResult result = _map.TryMovePlayer(direction);
+		_status = result.Outcome switch
 		{
-			OpenDoor(destination);
-			return;
-		}
-
-		if (_map.GetEntityAt(destination) is Enemy enemy)
-		{
-			_status = $"{enemy.Name} преграждает путь. Бой пока не реализован.";
-		}
-		else if (_map.CanEnter(destination))
-		{
-			_player = destination;
-			_status = string.Empty;
-		}
-		else
-		{
-			_status = tile == DungeonTile.Wall
-				? "Здесь стена (#)."
-				: "За пределами открытой карты — пустота.";
-		}
+			PlayerMoveOutcome.Moved => string.Empty,
+			PlayerMoveOutcome.OpenedDoor => DescribeDoorExpansion(
+				result.DoorExpansion
+					?? throw new InvalidOperationException("Door movement result has no expansion data.")),
+			PlayerMoveOutcome.BlockedByEntity when result.BlockingEntity is Enemy enemy
+				=> $"{enemy.Name} преграждает путь. Бой пока не реализован.",
+			PlayerMoveOutcome.BlockedByEntity => "Клетка занята.",
+			PlayerMoveOutcome.BlockedByTerrain when result.BlockingTile == DungeonTile.Wall
+				=> "Здесь стена (#).",
+			PlayerMoveOutcome.BlockedByTerrain => "За пределами открытой карты — пустота.",
+			PlayerMoveOutcome.PlayerIsDead => "Мёртвый персонаж не может двигаться.",
+			_ => throw new ArgumentOutOfRangeException(nameof(result.Outcome), result.Outcome, null),
+		};
 
 		QueueRedraw();
 	}
 
 	private void TryOpenAdjacentDoor()
 	{
-		foreach (CardinalDirection direction in CardinalDirectionExtensions.All)
+		PlayerDoorInteractionResult result = _map.TryOpenAdjacentDoor();
+		_status = result.Outcome switch
 		{
-			Vector2I position = _player + direction.ToOffset();
-			if (_map.GetTile(position) == DungeonTile.ClosedDoor)
-			{
-				OpenDoor(position);
-				return;
-			}
-		}
-
-		_status = "Рядом нет закрытой двери (+).";
+			PlayerDoorInteractionOutcome.OpenedDoor => DescribeDoorExpansion(
+				result.DoorExpansion
+					?? throw new InvalidOperationException("Door interaction result has no expansion data.")),
+			PlayerDoorInteractionOutcome.NoAdjacentDoor => "Рядом нет закрытой двери (+).",
+			PlayerDoorInteractionOutcome.PlayerIsDead => "Мёртвый персонаж не может открывать двери.",
+			_ => throw new ArgumentOutOfRangeException(nameof(result.Outcome), result.Outcome, null),
+		};
 		QueueRedraw();
 	}
 
-	private void OpenDoor(Vector2I position)
+	private static string DescribeDoorExpansion(DoorExpansion expansion)
 	{
-		DoorExpansion? expansion = _map.OpenDoor(position);
-		_status = expansion switch
+		return expansion switch
 		{
-			null => "Эта дверь не открывается.",
 			{ OpenedInternalDoor: true } => "Открыта дверь между частями комнаты.",
 			{ CreatedRegion: true, RegionKind: DungeonRegionKind.Room } => "За дверью открылась новая комната.",
 			{ CreatedRegion: true } => "За дверью открылся новый коридор.",
 			_ => "Дверь соединила две уже известные области.",
 		};
-		QueueRedraw();
 	}
 
-	private static Vector2I? GetMovement(Key key)
+	private static CardinalDirection? GetMovement(Key key)
 	{
 		return key switch
 		{
-			Key.W or Key.Up => Vector2I.Up,
-			Key.D or Key.Right => Vector2I.Right,
-			Key.S or Key.Down => Vector2I.Down,
-			Key.A or Key.Left => Vector2I.Left,
+			Key.W or Key.Up => CardinalDirection.Up,
+			Key.D or Key.Right => CardinalDirection.Right,
+			Key.S or Key.Down => CardinalDirection.Down,
+			Key.A or Key.Left => CardinalDirection.Left,
 			_ => null,
 		};
 	}

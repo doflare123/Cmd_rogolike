@@ -70,7 +70,7 @@ internal sealed class EnemyGenerator
 
 		return region.Floors
 			.Where(position => _grid[position] == DungeonTile.Floor)
-			.Where(position => !_entities.IsBlocked(position))
+			.Where(position => !_entities.IsOccupied(position))
 			.Where(position => position.DistanceTo(region.Anchor) >= 2.0f)
 			.Where(position => doorPositions.All(door => ManhattanDistance(position, door) >= MinimumDistanceFromDoor))
 			.ToList();

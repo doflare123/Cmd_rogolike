@@ -41,9 +41,16 @@ public partial class DungeonGenerationSmokeTest : Node
 	private static int CheckSeed(int seed)
 	{
 		DungeonMap map = new(seed, 3);
-		if (!map.IsWalkable(map.PlayerStart))
+		PlayerCharacter player = map.Player;
+		if (map.GetTile(map.PlayerStart) != DungeonTile.Floor)
 		{
 			throw new InvalidOperationException($"Seed {seed}: player did not spawn on a floor cell.");
+		}
+
+		if (player.Position != map.PlayerStart
+			|| !ReferenceEquals(map.GetEntityAt(player.Position), player))
+		{
+			throw new InvalidOperationException($"Seed {seed}: player is not registered at the spawn point.");
 		}
 
 		if (map.EnemyCount != 0)
@@ -97,22 +104,40 @@ public partial class DungeonGenerationSmokeTest : Node
 		AssertAllWalkableTilesAreConnected(map, seed);
 
 		HashSet<Vector2I> occupiedCells = new();
+		int playerCount = 0;
 		foreach (DungeonEntity entity in map.GetEntities())
 		{
-			if (entity is not BasicEnemy)
-			{
-				throw new InvalidOperationException($"Seed {seed}: unexpected entity type {entity.GetType().Name}.");
-			}
-
 			if (!occupiedCells.Add(entity.Position))
 			{
 				throw new InvalidOperationException($"Seed {seed}: duplicate entity cell {entity.Position}.");
 			}
 
+			switch (entity)
+			{
+				case PlayerCharacter registeredPlayer:
+					playerCount++;
+					if (!ReferenceEquals(registeredPlayer, player)
+						|| registeredPlayer.Position != map.PlayerStart)
+					{
+						throw new InvalidOperationException($"Seed {seed}: unexpected player registration.");
+					}
+					break;
+				case BasicEnemy:
+					break;
+				default:
+					throw new InvalidOperationException(
+						$"Seed {seed}: unexpected entity type {entity.GetType().Name}.");
+			}
+
 			if (map.GetTile(entity.Position) != DungeonTile.Floor || map.CanEnter(entity.Position))
 			{
-				throw new InvalidOperationException($"Seed {seed}: invalid enemy cell {entity.Position}.");
+				throw new InvalidOperationException($"Seed {seed}: invalid entity cell {entity.Position}.");
 			}
+		}
+
+		if (playerCount != 1)
+		{
+			throw new InvalidOperationException($"Seed {seed}: expected one player, found {playerCount}.");
 		}
 
 		return map.EnemyCount;

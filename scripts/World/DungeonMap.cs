@@ -27,6 +27,7 @@ public sealed class DungeonMap
 	public int EnemyCount => _entities.All.Count(entity => entity is Enemy);
 	public int PopulatedRoomCount { get; private set; }
 	public Vector2I PlayerStart { get; }
+	public PlayerCharacter Player { get; }
 
 	public DungeonMap(int seed, int minimumDoorsPerRoom = 3)
 		: this(seed, new DungeonGenerationOptions(minimumDoorsPerRoom))
@@ -54,6 +55,8 @@ public sealed class DungeonMap
 			forceRoom: true);
 		_regions.Add(firstRegion.Sector, firstRegion);
 		PlayerStart = _regionGenerator.PickFloorCell(firstRegion);
+		Player = new PlayerCharacter(PlayerStart);
+		_entities.Add(Player);
 		_enemyGenerator.Populate(firstRegion, isSafeRegion: true);
 	}
 
@@ -75,7 +78,70 @@ public sealed class DungeonMap
 
 	public bool CanEnter(Vector2I position)
 	{
-		return _grid.IsWalkable(position) && !_entities.IsBlocked(position);
+		return _grid.IsWalkable(position) && !_entities.IsOccupied(position);
+	}
+
+	/// <summary>
+	/// Выполняет одну команду перемещения игрока. Проверка рельефа, столкновений,
+	/// открытие двери при упоре и атомарное изменение позиции остаются в World.
+	/// </summary>
+	public PlayerMoveResult TryMovePlayer(CardinalDirection direction)
+	{
+		Vector2I origin = Player.Position;
+		Vector2I destination = origin + direction.ToOffset();
+
+		if (!Player.IsAlive)
+		{
+			return PlayerMoveResult.PlayerIsDead(origin);
+		}
+
+		DungeonTile tile = GetTile(destination);
+		if (tile == DungeonTile.ClosedDoor)
+		{
+			DoorExpansion expansion = OpenDoor(destination)
+				?? throw new InvalidOperationException(
+					$"Closed door at {destination} is missing from the door registry.");
+			return PlayerMoveResult.OpenedDoor(origin, destination, expansion);
+		}
+
+		if (!_grid.IsWalkable(destination))
+		{
+			return PlayerMoveResult.BlockedByTerrain(origin, destination, tile);
+		}
+
+		if (_entities.TryGetAt(destination, out DungeonEntity? blockingEntity))
+		{
+			return PlayerMoveResult.BlockedByEntity(origin, destination, blockingEntity!);
+		}
+
+		_entities.Move(Player, destination);
+		return PlayerMoveResult.Moved(origin, destination);
+	}
+
+	public PlayerDoorInteractionResult TryOpenAdjacentDoor()
+	{
+		Vector2I playerPosition = Player.Position;
+		if (!Player.IsAlive)
+		{
+			return PlayerDoorInteractionResult.PlayerIsDead(playerPosition);
+		}
+
+		foreach (CardinalDirection direction in CardinalDirectionExtensions.All)
+		{
+			Vector2I position = playerPosition + direction.ToOffset();
+			if (GetTile(position) == DungeonTile.ClosedDoor)
+			{
+				DoorExpansion expansion = OpenDoor(position)
+					?? throw new InvalidOperationException(
+						$"Closed door at {position} is missing from the door registry.");
+				return PlayerDoorInteractionResult.OpenedDoor(
+					playerPosition,
+					position,
+					expansion);
+			}
+		}
+
+		return PlayerDoorInteractionResult.NoAdjacentDoor(playerPosition);
 	}
 
 	public DungeonEntity? GetEntityAt(Vector2I position)

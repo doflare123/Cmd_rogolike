@@ -26,6 +26,11 @@ internal sealed class EntityRegistry
 			&& entity?.BlocksMovement == true;
 	}
 
+	public bool IsOccupied(Vector2I position)
+	{
+		return _byPosition.ContainsKey(position);
+	}
+
 	public void Add(DungeonEntity entity)
 	{
 		ArgumentNullException.ThrowIfNull(entity);
@@ -42,5 +47,49 @@ internal sealed class EntityRegistry
 
 		_byId.Add(entity.Id, entity);
 		_byPosition.Add(entity.Position, entity);
+	}
+
+	/// <summary>
+	/// Атомарно обновляет позиционный индекс и саму сущность. Все нарушения
+	/// проверяются до изменения состояния, поэтому неудачный ход не оставляет
+	/// реестр в частично обновлённом состоянии.
+	/// </summary>
+	public void Move(DungeonEntity entity, Vector2I destination)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+
+		if (!_byId.TryGetValue(entity.Id, out DungeonEntity? registered)
+			|| !ReferenceEquals(registered, entity))
+		{
+			throw new InvalidOperationException($"Entity {entity.Id} is not registered.");
+		}
+
+		Vector2I origin = entity.Position;
+		if (origin == destination)
+		{
+			return;
+		}
+
+		if (!_byPosition.TryGetValue(origin, out DungeonEntity? indexed)
+			|| !ReferenceEquals(indexed, entity))
+		{
+			throw new InvalidOperationException(
+				$"Entity {entity.Id} position index is inconsistent at {origin}.");
+		}
+
+		if (_byPosition.ContainsKey(destination))
+		{
+			throw new InvalidOperationException($"Cell {destination} is already occupied.");
+		}
+
+		_byPosition.Add(destination, entity);
+		if (!_byPosition.Remove(origin))
+		{
+			_byPosition.Remove(destination);
+			throw new InvalidOperationException(
+				$"Entity {entity.Id} could not be removed from its previous cell {origin}.");
+		}
+
+		entity.Position = destination;
 	}
 }
