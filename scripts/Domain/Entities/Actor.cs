@@ -1,3 +1,4 @@
+using CmdRoguelike.Domain.Stats;
 using Godot;
 
 namespace CmdRoguelike.Domain.Entities;
@@ -8,12 +9,20 @@ namespace CmdRoguelike.Domain.Entities;
 public abstract class Actor : DungeonEntity
 {
 	public string Name { get; }
-	public int MaxHealth { get; }
-	public int Health { get; private set; }
+	public AttributeSet Attributes { get; }
+	public DerivedStatSet DerivedStats { get; }
+	public ActorResources Resources { get; }
+	public int MaxHealth => Resources.MaxHealth;
+	public int Health => Resources.Health;
 	public bool IsAlive => Health > 0;
 	public override bool BlocksMovement => IsAlive;
 
-	protected Actor(Vector2I position, string name, int maxHealth)
+	protected Actor(
+		Vector2I position,
+		string name,
+		int maxHealth,
+		int maxMana = 0,
+		IReadOnlyDictionary<AttributeId, int>? baseAttributes = null)
 		: base(position)
 	{
 		if (string.IsNullOrWhiteSpace(name))
@@ -21,14 +30,11 @@ public abstract class Actor : DungeonEntity
 			throw new ArgumentException("Actor name cannot be empty.", nameof(name));
 		}
 
-		if (maxHealth <= 0)
-		{
-			throw new ArgumentOutOfRangeException(nameof(maxHealth));
-		}
-
 		Name = name;
-		MaxHealth = maxHealth;
-		Health = maxHealth;
+		Attributes = new AttributeSet(baseAttributes);
+		DerivedStats = new DerivedStatSet(maxHealth, maxMana);
+		Resources = new ActorResources(maxHealth, maxMana);
+		DerivedStats.ValueChanged += OnDerivedStatChanged;
 	}
 
 	public void TakeDamage(int amount)
@@ -38,6 +44,23 @@ public abstract class Actor : DungeonEntity
 			throw new ArgumentOutOfRangeException(nameof(amount));
 		}
 
-		Health = Math.Max(0, Health - amount);
+		Resources.TakeDamage(amount);
+	}
+
+	public void RestoreHealth(int amount)
+	{
+		Resources.RestoreHealth(amount);
+	}
+
+	private void OnDerivedStatChanged(DerivedStatId stat, int oldValue, int newValue)
+	{
+		_ = oldValue;
+		_ = newValue;
+		if (stat is DerivedStatId.MaxHealth or DerivedStatId.MaxMana)
+		{
+			Resources.SynchronizeMaximums(
+				DerivedStats.GetValue(DerivedStatId.MaxHealth),
+				DerivedStats.GetValue(DerivedStatId.MaxMana));
+		}
 	}
 }

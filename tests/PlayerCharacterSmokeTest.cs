@@ -1,5 +1,6 @@
 using CmdRoguelike.Core;
 using CmdRoguelike.Domain.Entities;
+using CmdRoguelike.Domain.Stats;
 using CmdRoguelike.State;
 using CmdRoguelike.World;
 using Godot;
@@ -15,6 +16,8 @@ public partial class PlayerCharacterSmokeTest : Node
 			AssertPlayerIsRegisteredInWorld();
 			AssertWorldMovementUpdatesEntityIndex();
 			AssertRegistryMoveIsAtomic();
+			AssertHeroStatsAreCalculatedFromSourcedModifiers();
+			AssertResourceMaximumChangesDoNotHeal();
 			GD.Print("Player character smoke test passed.");
 			GetTree().Quit(0);
 		}
@@ -22,6 +25,75 @@ public partial class PlayerCharacterSmokeTest : Node
 		{
 			GD.PushError(exception.ToString());
 			GetTree().Quit(1);
+		}
+	}
+
+	private static void AssertHeroStatsAreCalculatedFromSourcedModifiers()
+	{
+		PlayerCharacter player = new(Vector2I.Zero);
+		if (Enum.GetValues<AttributeId>().Any(attribute => player.Attributes.GetValue(attribute) != 0))
+		{
+			throw new InvalidOperationException("Unconfigured hero attributes must remain neutral.");
+		}
+
+		player.Attributes.IncreasePermanent(AttributeId.Strength, 2);
+		player.Attributes.AddModifier(
+			AttributeId.Strength,
+			new StatModifier("training-ring", StatModifierOperation.Flat, 3));
+		player.Attributes.AddModifier(
+			AttributeId.Strength,
+			new StatModifier("blessing", StatModifierOperation.Increased, 5_000));
+		player.Attributes.AddModifier(
+			AttributeId.Strength,
+			new StatModifier("battle-stance", StatModifierOperation.More, 20_000));
+
+		if (player.Attributes.GetValue(AttributeId.Strength) != 24)
+		{
+			throw new InvalidOperationException("Attribute modifier stages or rounding are incorrect.");
+		}
+
+		if (player.Attributes.RemoveModifiersFromSource("training-ring") != 1
+			|| player.Attributes.GetValue(AttributeId.Strength) != 9)
+		{
+			throw new InvalidOperationException("Removing a modifier source produced an invalid attribute value.");
+		}
+	}
+
+	private static void AssertResourceMaximumChangesDoNotHeal()
+	{
+		PlayerCharacter player = new(Vector2I.Zero);
+		player.TakeDamage(4);
+		player.DerivedStats.AddModifier(
+			DerivedStatId.MaxHealth,
+			new StatModifier("test-amulet", StatModifierOperation.Flat, 5));
+
+		if (player.MaxHealth != 15 || player.Health != 6)
+		{
+			throw new InvalidOperationException("Increasing maximum health unexpectedly healed the hero.");
+		}
+
+		player.RestoreHealth(100);
+		player.DerivedStats.RemoveModifiersFromSource("test-amulet");
+		if (player.MaxHealth != 10 || player.Health != 10)
+		{
+			throw new InvalidOperationException("Health was not clamped after maximum health decreased.");
+		}
+
+		bool rejectedInvalidMaximum = false;
+		try
+		{
+			player.DerivedStats.AddModifier(
+				DerivedStatId.MaxHealth,
+				new StatModifier("invalid-curse", StatModifierOperation.Override, 0));
+		}
+		catch (InvalidOperationException)
+		{
+			rejectedInvalidMaximum = true;
+		}
+
+		if (!rejectedInvalidMaximum || player.MaxHealth != 10 || player.Health != 10)
+		{
+			throw new InvalidOperationException("An invalid maximum left the hero resources corrupted.");
 		}
 	}
 
