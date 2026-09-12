@@ -59,7 +59,7 @@ internal sealed class AsciiDungeonRenderer
 		canvas.DrawString(
 			font,
 			new Vector2(Padding, 42),
-			"WASD/стрелки — ход   E/Space — открыть   R — новый мир   Esc — выход",
+			"WASD/стрелки — ход   E/Space — открыть   I — инвентарь   R — сброс героя   Esc — выход",
 			HorizontalAlignment.Left,
 			-1,
 			15,

@@ -36,6 +36,9 @@ public partial class DungeonGame : Node2D
 
 	private readonly AsciiDungeonRenderer _renderer = new();
 	private DungeonMap _map = null!;
+	private PreparationSession _session = null!;
+	private InventoryPanel _inventoryPanel = null!;
+	private int _requestedSeed;
 	private string _status = string.Empty;
 
 	public override void _Ready()
@@ -48,6 +51,22 @@ public partial class DungeonGame : Node2D
 	{
 		if (@event is not InputEventKey { Pressed: true } key)
 		{
+			return;
+		}
+
+		if (_inventoryPanel.Visible)
+		{
+			if (_session.Map is not null && key.Keycode is Key.I or Key.Escape) CloseInventory();
+			else if (key.Keycode == Key.Escape) GetTree().Quit();
+			GetViewport().SetInputAsHandled();
+			return;
+		}
+
+		if (key.Keycode == Key.I && !key.Echo)
+		{
+			_inventoryPanel.Refresh();
+			_inventoryPanel.Show();
+			GetViewport().SetInputAsHandled();
 			return;
 		}
 
@@ -79,6 +98,7 @@ public partial class DungeonGame : Node2D
 
 	public override void _Draw()
 	{
+		if (_session.Map is null) return;
 		_renderer.Draw(
 			this,
 			_map,
@@ -89,8 +109,20 @@ public partial class DungeonGame : Node2D
 
 	private void StartNewWorld(int requestedSeed)
 	{
-		int seed = requestedSeed != 0
-			? requestedSeed
+		_requestedSeed = requestedSeed;
+		_session = new PreparationSession();
+		if (_inventoryPanel is not null) { RemoveChild(_inventoryPanel); _inventoryPanel.QueueFree(); }
+		_inventoryPanel = new InventoryPanel(_session.Hero, EnterExpedition, CloseInventory);
+		AddChild(_inventoryPanel);
+		QueueRedraw();
+	}
+
+	private void CloseInventory() => _inventoryPanel.Hide();
+
+	private void EnterExpedition()
+	{
+		int seed = _requestedSeed != 0
+			? _requestedSeed
 			: Random.Shared.Next(1, int.MaxValue);
 		DungeonGenerationOptions options = new(
 			minimumDoorsPerRoom: MinimumDoorsPerRoom,
@@ -98,7 +130,8 @@ public partial class DungeonGame : Node2D
 			minimumEnemiesPerRoom: 1,
 			maximumEnemiesPerRoom: MaximumEnemiesPerRoom);
 
-		_map = new DungeonMap(seed, options);
+		_map = _session.StartExpedition(seed, options);
+		CloseInventory();
 		_status = "Новый мир. Упритесь в + или нажмите E рядом с дверью.";
 		QueueRedraw();
 	}

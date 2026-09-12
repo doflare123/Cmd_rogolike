@@ -34,9 +34,11 @@ public sealed class DungeonMap
 	{
 	}
 
-	public DungeonMap(int seed, DungeonGenerationOptions options)
+	public DungeonMap(int seed, DungeonGenerationOptions options, PlayerCharacter? preparedHero = null)
 	{
 		ArgumentNullException.ThrowIfNull(options);
+		if (preparedHero is not null && (preparedHero.Inventory.IsLocked || !preparedHero.IsAlive))
+			throw new InvalidOperationException("Hero is unavailable for a new expedition.");
 
 		Seed = seed;
 		IRandomSource random = new GodotRandomSource(seed);
@@ -55,8 +57,10 @@ public sealed class DungeonMap
 			forceRoom: true);
 		_regions.Add(firstRegion.Sector, firstRegion);
 		PlayerStart = _regionGenerator.PickFloorCell(firstRegion);
-		Player = new PlayerCharacter(PlayerStart);
+		Player = preparedHero ?? new PlayerCharacter(PlayerStart);
 		_entities.Add(Player);
+		_entities.Move(Player, PlayerStart);
+		Player.Inventory.LockForExpedition();
 		_enemyGenerator.Populate(firstRegion, isSafeRegion: true);
 	}
 

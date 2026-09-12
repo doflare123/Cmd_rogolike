@@ -10,6 +10,7 @@ public class StatCollection<TStat> where TStat : struct, Enum
 	private readonly Dictionary<TStat, int> _baseValues;
 	private readonly Dictionary<TStat, int> _permanentGrowth = new();
 	private readonly Dictionary<TStat, List<StatModifier>> _modifiers = new();
+	private Dictionary<TStat, List<StatModifier>> _equipment = new();
 
 	public event Action<TStat, int, int>? ValueChanged;
 
@@ -30,9 +31,26 @@ public class StatCollection<TStat> where TStat : struct, Enum
 	}
 
 	public int GetValue(TStat stat)
+		=> Calculate(stat, _equipment.GetValueOrDefault(stat) ?? new());
+
+	internal int PreviewEquipment(TStat stat, IEnumerable<StatModifier> modifiers)
+		=> Calculate(stat, modifiers);
+
+	internal void SetEquipment(Dictionary<TStat, List<StatModifier>> equipment)
+	{
+		var oldValues = Enum.GetValues<TStat>().ToDictionary(stat => stat, GetValue);
+		foreach (TStat stat in oldValues.Keys)
+			_ = Calculate(stat, equipment.GetValueOrDefault(stat) ?? new());
+		_equipment = equipment;
+		foreach ((TStat stat, int oldValue) in oldValues)
+			NotifyIfChanged(stat, oldValue);
+	}
+
+	private int Calculate(TStat stat, IEnumerable<StatModifier> equipment)
 	{
 		int baseWithGrowth = checked(GetBaseValue(stat) + GetPermanentGrowth(stat));
-		if (!_modifiers.TryGetValue(stat, out List<StatModifier>? modifiers))
+		List<StatModifier> modifiers = (_modifiers.GetValueOrDefault(stat) ?? new()).Concat(equipment).ToList();
+		if (modifiers.Count == 0)
 		{
 			ValidateValue(stat, baseWithGrowth);
 			return baseWithGrowth;
