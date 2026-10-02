@@ -14,27 +14,43 @@ public partial class PreparationUiSmokeTest : Node
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 			var panel = Descendants(game).OfType<InventoryPanel>().Single();
-			FindButton(panel, "Надеть: Основная рука").EmitSignal(BaseButton.SignalName.Pressed);
-			Check(Labels(panel).Any(text => text.StartsWith("Не выполнены требования")), "Missing requirements feedback.");
-			FindButton(panel, "Надеть: Левое кольцо").EmitSignal(BaseButton.SignalName.Pressed);
-			FindButton(panel, "Надеть: Основная рука").EmitSignal(BaseButton.SignalName.Pressed);
-			FindButton(panel, "Надеть: Корпус").EmitSignal(BaseButton.SignalName.Pressed);
-			Check(Labels(panel).Any(text => text.Contains("HP 10/15")), "UI did not update HP.");
+			Check(!Descendants(panel).Any(node => node is Button or ScrollContainer), "GUI widgets returned to terminal UI.");
+			Press(game, Key.Enter);
+			Check(panel.Status.StartsWith("Не выполнены требования"), "Missing requirements feedback.");
+			Press(game, Key.Down, Key.Down, Key.Q);
+			Check(panel.ScreenText.Contains("надеть: Правое кольцо"), "Ring slot selection failed.");
+			Press(game, Key.Enter, Key.Up, Key.Up, Key.Enter, Key.Enter);
+			Check(panel.ScreenText.Contains("HP 10/15"), "UI did not update HP.");
+			Press(game, Key.Tab, Key.Down, Key.Enter);
+			Check(panel.ScreenText.Contains("HP 10/10"), "Keyboard unequip failed.");
+			Press(game, Key.Tab, Key.Up, Key.Up, Key.Enter);
+			Check(panel.ScreenText.Contains("HP 10/15"), "Keyboard re-equip failed.");
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 			if (DisplayServer.GetName() != "headless")
 			{
 				await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
 				GetViewport().GetTexture().GetImage().SavePng("res://.godot/preparation-ui.png");
 			}
-			FindButton(panel, "Отправиться в экспедицию").EmitSignal(BaseButton.SignalName.Pressed);
+			if (DisplayServer.GetName() != "headless")
+			{
+				GetWindow().Size = new Vector2I(800, 600);
+				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+				await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+				GetViewport().GetTexture().GetImage().SavePng("res://.godot/preparation-ui-small.png");
+			}
+			Press(game, Key.F);
 			Check(!panel.Visible, "Preparation remained open.");
 			game._UnhandledKeyInput(new InputEventKey { Pressed = true, Keycode = Key.I });
-			Check(panel.Visible && !Descendants(panel).OfType<Button>().Any(button => button.Text.StartsWith("Надеть") || button.Text.StartsWith("Снять")), "Expedition inventory permits edits.");
-			FindButton(panel, "Вернуться к карте").EmitSignal(BaseButton.SignalName.Pressed);
+			Check(panel.Visible && panel.ScreenText.Contains("ТОЛЬКО ПРОСМОТР"), "Expedition inventory permits edits.");
+			Press(game, Key.Enter);
+			Check(panel.Status.Contains("только для просмотра"), "Read-only action was not blocked.");
+			Press(game, Key.Escape);
 			Check(!panel.Visible, "Inventory failed to close.");
 			game._UnhandledKeyInput(new InputEventKey { Pressed = true, Keycode = Key.R });
 			var newPanel = Descendants(game).OfType<InventoryPanel>().Single();
-			Check(newPanel.Visible && Labels(newPanel).Any(text => text.Contains("HP 10/10")), "Restart did not create fresh preparation.");
+			Check(newPanel.Visible && newPanel.ScreenText.Contains("HP 10/10"), "Restart did not create fresh preparation.");
 			GD.Print("Preparation UI smoke test passed: equip feedback, stats, launch, read-only inventory, restart.");
 			GetTree().Quit();
 		}
@@ -49,8 +65,10 @@ public partial class PreparationUiSmokeTest : Node
 			foreach (Node descendant in Descendants(child)) yield return descendant;
 		}
 	}
-	private static IEnumerable<string> Labels(Node node) => Descendants(node).OfType<Label>().Select(label => label.Text);
-	private static Button FindButton(Node node, string text) => Descendants(node).OfType<Button>().Single(button => button.Text == text);
+	private static void Press(DungeonGame game, params Key[] keys)
+	{
+		foreach (Key key in keys) game._UnhandledKeyInput(new InputEventKey { Pressed = true, Keycode = key });
+	}
 	private static void Check(bool condition, string message)
 	{
 		if (!condition) throw new InvalidOperationException(message);

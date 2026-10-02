@@ -56,8 +56,7 @@ public partial class DungeonGame : Node2D
 
 		if (_inventoryPanel.Visible)
 		{
-			if (_session.Map is not null && key.Keycode is Key.I or Key.Escape) CloseInventory();
-			else if (key.Keycode == Key.Escape) GetTree().Quit();
+			_inventoryPanel.HandleKey(key);
 			GetViewport().SetInputAsHandled();
 			return;
 		}
