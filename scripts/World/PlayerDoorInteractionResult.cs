@@ -8,6 +8,7 @@ public enum PlayerDoorInteractionOutcome
 	OpenedDoor,
 	NoAdjacentDoor,
 	PlayerIsDead,
+	InCombat,
 }
 
 /// <summary>
@@ -58,4 +59,7 @@ public sealed class PlayerDoorInteractionResult
 			PlayerDoorInteractionOutcome.PlayerIsDead,
 			playerPosition);
 	}
+
+	internal static PlayerDoorInteractionResult InCombat(Vector2I position)
+		=> new(PlayerDoorInteractionOutcome.InCombat, position);
 }

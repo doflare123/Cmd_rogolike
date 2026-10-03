@@ -8,4 +8,6 @@ public enum DerivedStatId
 {
 	MaxHealth,
 	MaxMana,
+	Armor,
+	MaxActionPoints,
 }

@@ -49,6 +49,18 @@ internal sealed class EntityRegistry
 		_byPosition.Add(entity.Position, entity);
 	}
 
+	public void Remove(DungeonEntity entity)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		if (!_byId.TryGetValue(entity.Id, out DungeonEntity? registered)
+			|| !ReferenceEquals(registered, entity)
+			|| !_byPosition.TryGetValue(entity.Position, out DungeonEntity? indexed)
+			|| !ReferenceEquals(indexed, entity))
+			throw new InvalidOperationException("Cannot remove an unregistered or inconsistently indexed entity.");
+		_byPosition.Remove(entity.Position);
+		_byId.Remove(entity.Id);
+	}
+
 	/// <summary>
 	/// Атомарно обновляет позиционный индекс и саму сущность. Все нарушения
 	/// проверяются до изменения состояния, поэтому неудачный ход не оставляет

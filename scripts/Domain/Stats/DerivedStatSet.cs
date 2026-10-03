@@ -7,6 +7,8 @@ public sealed class DerivedStatSet : StatCollection<DerivedStatId>
 		{
 			[DerivedStatId.MaxHealth] = maxHealth,
 			[DerivedStatId.MaxMana] = maxMana,
+			[DerivedStatId.Armor] = 0,
+			[DerivedStatId.MaxActionPoints] = 3,
 		})
 	{
 		if (maxHealth <= 0)
@@ -27,9 +29,9 @@ public sealed class DerivedStatSet : StatCollection<DerivedStatId>
 			throw new InvalidOperationException("Maximum health must remain positive.");
 		}
 
-		if (stat == DerivedStatId.MaxMana && value < 0)
+		if (stat != DerivedStatId.MaxHealth && value < 0)
 		{
-			throw new InvalidOperationException("Maximum mana cannot be negative.");
+			throw new InvalidOperationException($"{stat} cannot be negative.");
 		}
 	}
 }

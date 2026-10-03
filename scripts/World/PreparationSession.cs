@@ -38,7 +38,7 @@ internal static class PrototypeItems
 				attributeBonuses: new Dictionary<AttributeId, int> { [AttributeId.Strength] = 2 }), 1),
 			(new("training-armor", "Учебный доспех", slots: new[] { EquipmentSlot.Torso },
 				requirements: new Dictionary<AttributeId, int> { [AttributeId.Strength] = 2 },
-				statBonuses: new Dictionary<DerivedStatId, int> { [DerivedStatId.MaxHealth] = 5 }), 1),
+				statBonuses: new Dictionary<DerivedStatId, int> { [DerivedStatId.MaxHealth] = 5, [DerivedStatId.Armor] = 2 }), 1),
 			(new("strength-ring", "Кольцо силы", slots: new[] { EquipmentSlot.RingLeft, EquipmentSlot.RingRight },
 				attributeBonuses: new Dictionary<AttributeId, int> { [AttributeId.Strength] = 2 }), 1),
 			(new("feather", "Перо", maximumStack: 100), 125),

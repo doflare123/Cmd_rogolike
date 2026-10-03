@@ -12,6 +12,7 @@ public enum PlayerMoveOutcome
 	BlockedByTerrain,
 	BlockedByEntity,
 	PlayerIsDead,
+	InCombat,
 }
 
 /// <summary>
@@ -93,4 +94,7 @@ public sealed class PlayerMoveResult
 			position,
 			position);
 	}
+
+	internal static PlayerMoveResult InCombat(Vector2I position)
+		=> new(PlayerMoveOutcome.InCombat, position, position);
 }

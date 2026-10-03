@@ -1,6 +1,7 @@
 using CmdRoguelike.Core;
 using CmdRoguelike.Domain;
 using CmdRoguelike.Domain.Entities;
+using CmdRoguelike.Domain.Combat;
 using CmdRoguelike.Generation;
 using CmdRoguelike.State;
 using Godot;
@@ -19,6 +20,11 @@ public sealed class DungeonMap
 	private readonly Dictionary<Vector2I, DungeonRegion> _regions = new();
 	private readonly RegionGenerator _regionGenerator;
 	private readonly EnemyGenerator _enemyGenerator;
+	private readonly DungeonKnowledge _knowledge = new();
+	private readonly CombatOptions _combatOptions;
+	private int _encounterNumber;
+	public CombatEncounter? Combat { get; private set; }
+	public bool IsInCombat => Combat is not null;
 
 	public int Seed { get; }
 	public int RegionCount => _regions.Count;
@@ -34,13 +40,14 @@ public sealed class DungeonMap
 	{
 	}
 
-	public DungeonMap(int seed, DungeonGenerationOptions options, PlayerCharacter? preparedHero = null)
+	public DungeonMap(int seed, DungeonGenerationOptions options, PlayerCharacter? preparedHero = null, CombatOptions? combatOptions = null)
 	{
 		ArgumentNullException.ThrowIfNull(options);
 		if (preparedHero is not null && (preparedHero.Inventory.IsLocked || !preparedHero.IsAlive))
 			throw new InvalidOperationException("Hero is unavailable for a new expedition.");
 
 		Seed = seed;
+		_combatOptions = combatOptions ?? new CombatOptions();
 		IRandomSource random = new GodotRandomSource(seed);
 		_regionGenerator = new RegionGenerator(options, random, _grid, _doors);
 		_enemyGenerator = new EnemyGenerator(
@@ -62,6 +69,7 @@ public sealed class DungeonMap
 		_entities.Move(Player, PlayerStart);
 		Player.Inventory.LockForExpedition();
 		_enemyGenerator.Populate(firstRegion, isSafeRegion: true);
+		_knowledge.Enter(PlayerStart, GetTile);
 	}
 
 	public DungeonTile GetTile(Vector2I position)
@@ -98,6 +106,7 @@ public sealed class DungeonMap
 		{
 			return PlayerMoveResult.PlayerIsDead(origin);
 		}
+		if (IsInCombat) return PlayerMoveResult.InCombat(origin);
 
 		DungeonTile tile = GetTile(destination);
 		if (tile == DungeonTile.ClosedDoor)
@@ -119,6 +128,7 @@ public sealed class DungeonMap
 		}
 
 		_entities.Move(Player, destination);
+		RevealPlayerSection();
 		return PlayerMoveResult.Moved(origin, destination);
 	}
 
@@ -129,6 +139,7 @@ public sealed class DungeonMap
 		{
 			return PlayerDoorInteractionResult.PlayerIsDead(playerPosition);
 		}
+		if (IsInCombat) return PlayerDoorInteractionResult.InCombat(playerPosition);
 
 		foreach (CardinalDirection direction in CardinalDirectionExtensions.All)
 		{
@@ -153,6 +164,50 @@ public sealed class DungeonMap
 		return _entities.TryGetAt(position, out DungeonEntity? entity)
 			? entity
 			: null;
+	}
+
+	public bool IsRevealed(Vector2I position) => _knowledge.IsRevealed(position);
+	public DungeonTile GetRevealedTile(Vector2I position)
+		=> IsRevealed(position) ? GetTile(position) : DungeonTile.Empty;
+	public DungeonEntity? GetVisibleEntityAt(Vector2I position)
+		=> position == Player.Position || _knowledge.IsInCurrentSection(position)
+			? GetEntityAt(position) : null;
+	public int VisibleEnemyCount => _entities.All.OfType<Enemy>()
+		.Count(enemy => enemy.IsAlive && _knowledge.IsInCurrentSection(enemy.Position));
+
+	private void RevealPlayerSection()
+	{
+		_knowledge.Enter(Player.Position, GetTile);
+		if (GetTile(Player.Position) != DungeonTile.Floor || IsInCombat) return;
+		Enemy[] enemies = _entities.All.OfType<Enemy>()
+			.Where(enemy => enemy.IsAlive && _knowledge.IsInCurrentSection(enemy.Position))
+			.OrderBy(enemy => enemy.Position.Y).ThenBy(enemy => enemy.Position.X).ToArray();
+		if (enemies.Length == 0) return;
+		// Independent combat RNG: playing or replacing cards cannot change future geometry.
+		int combatSeed = unchecked(Seed * 397 ^ ++_encounterNumber);
+		Combat = new CombatEncounter(Player, enemies, combatSeed, _combatOptions);
+	}
+
+	public CombatCommandResult BeginCombatRound()
+		=> Combat?.BeginRound() ?? CombatCommandResult.WrongPhase;
+	public CombatCommandResult EndCombatTurn()
+		=> Combat?.EndPlayerTurn() ?? CombatCommandResult.WrongPhase;
+	public CombatCommandResult ReplaceCombatCard(int index)
+		=> Combat?.ReplaceCard(index) ?? CombatCommandResult.WrongPhase;
+	public CombatCommandResult PlayCombatCard(int index, Guid? targetId = null)
+	{
+		CombatCommandResult result = Combat?.PlayCard(index, targetId) ?? CombatCommandResult.WrongPhase;
+		if (Combat is not null && result == CombatCommandResult.Success)
+			foreach (Enemy enemy in Combat.Enemies.Where(enemy => !enemy.IsAlive))
+				if (ReferenceEquals(GetEntityAt(enemy.Position), enemy)) _entities.Remove(enemy);
+		return result;
+	}
+
+	public bool LeaveVictoriousCombat()
+	{
+		if (Combat?.Phase != CombatPhase.Victory) return false;
+		Combat = null;
+		return true;
 	}
 
 	public IReadOnlyCollection<DungeonEntity> GetEntities()
@@ -214,6 +269,7 @@ public sealed class DungeonMap
 	/// </summary>
 	public DoorExpansion? OpenDoor(Vector2I position)
 	{
+		if (IsInCombat || !Player.IsAlive) return null;
 		if (_grid[position] != DungeonTile.ClosedDoor
 			|| !_doors.TryGet(position, out DungeonDoor door))
 		{
@@ -223,6 +279,7 @@ public sealed class DungeonMap
 		if (door.IsInternal)
 		{
 			_grid.SetDoorState(position, DungeonTile.OpenDoor);
+			_knowledge.Enter(Player.Position, GetTile, refresh: true);
 			OpenedDoorCount++;
 			return new DoorExpansion(false, true, null);
 		}
@@ -258,6 +315,7 @@ public sealed class DungeonMap
 
 		OpenedDoorCount++;
 
+		_knowledge.Enter(Player.Position, GetTile, refresh: true);
 		return new DoorExpansion(createdRegion, false, targetRegion!.Kind);
 	}
 }

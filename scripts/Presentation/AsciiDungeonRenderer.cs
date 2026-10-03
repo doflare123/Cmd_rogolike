@@ -27,12 +27,13 @@ internal sealed class AsciiDungeonRenderer
 		DungeonMap map,
 		string status,
 		Vector2 viewportSize,
-		AsciiRenderOptions options)
+		AsciiRenderOptions options,
+		float encounterPulse = 0)
 	{
 		canvas.DrawRect(new Rect2(Vector2.Zero, viewportSize), BackgroundColor);
 		Font font = ThemeDB.FallbackFont;
 		DrawHeader(canvas, font, map);
-		DrawMap(canvas, font, map, viewportSize, options);
+		DrawMap(canvas, font, map, viewportSize, options, encounterPulse);
 		canvas.DrawString(
 			font,
 			new Vector2(Padding, viewportSize.Y - 9),
@@ -47,7 +48,7 @@ internal sealed class AsciiDungeonRenderer
 	{
 		PlayerCharacter player = map.Player;
 		string info = $"{player.Name} HP {player.Health}/{player.MaxHealth}   SEED {map.Seed}   "
-			+ $"AREAS {map.RegionCount}   ENEMIES {map.EnemyCount}   OPENED {map.OpenedDoorCount}";
+			+ $"VISIBLE ENEMIES {map.VisibleEnemyCount}   OPENED {map.OpenedDoorCount}";
 		canvas.DrawString(
 			font,
 			new Vector2(Padding, 21),
@@ -71,7 +72,8 @@ internal sealed class AsciiDungeonRenderer
 		Font font,
 		DungeonMap map,
 		Vector2 viewportSize,
-		AsciiRenderOptions options)
+		AsciiRenderOptions options,
+		float encounterPulse)
 	{
 		int columns = Math.Max(1, (int)((viewportSize.X - (Padding * 2)) / options.CellWidth));
 		int rows = Math.Max(1, (int)((viewportSize.Y - HeaderHeight - FooterHeight) / options.CellHeight));
@@ -83,6 +85,7 @@ internal sealed class AsciiDungeonRenderer
 			{
 				Vector2I worldPosition = firstTile + new Vector2I(screenX, screenY);
 				(string symbol, Color color) = GetAppearance(map, worldPosition);
+				if (symbol == "e" && encounterPulse > 0) color = color.Lerp(ClosedDoorColor, encounterPulse);
 
 				if (symbol.Length == 0)
 				{
@@ -104,11 +107,11 @@ internal sealed class AsciiDungeonRenderer
 		}
 	}
 
-	private static (string Symbol, Color Color) GetAppearance(
+	internal static (string Symbol, Color Color) GetAppearance(
 		DungeonMap map,
 		Vector2I position)
 	{
-		DungeonEntity? entity = map.GetEntityAt(position);
+		DungeonEntity? entity = map.GetVisibleEntityAt(position);
 		if (entity is PlayerCharacter)
 		{
 			return ("@", PlayerColor);
@@ -119,7 +122,7 @@ internal sealed class AsciiDungeonRenderer
 			return ("e", EnemyColor);
 		}
 
-		return GetTileAppearance(map.GetTile(position));
+		return GetTileAppearance(map.GetRevealedTile(position));
 	}
 
 	private static (string Symbol, Color Color) GetTileAppearance(DungeonTile tile)

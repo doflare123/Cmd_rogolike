@@ -114,7 +114,7 @@ internal sealed partial class InventoryPanel : CanvasLayer
 		}
 		bool locked = _hero.Inventory.IsLocked;
 		Put(2, 0, "CMD ROGUELIKE / " + (locked ? "ЭКСПЕДИЦИЯ / ИНВЕНТАРЬ" : "БАЗА / ПОДГОТОВКА"), Accent);
-		Put(2, 2, $"@ {_hero.Name}   HP {_hero.Health}/{_hero.MaxHealth}   MP {_hero.Resources.Mana}/{_hero.Resources.MaxMana}   Раса: null", Ink);
+		Put(2, 2, $"@ {_hero.Name}   HP {_hero.Health}/{_hero.MaxHealth}   MP {_hero.Resources.Mana}/{_hero.Resources.MaxMana}   Броня {_hero.DerivedStats.GetValue(DerivedStatId.Armor)}   AP {_hero.DerivedStats.GetValue(DerivedStatId.MaxActionPoints)}   Раса: null", Ink);
 		var attributes = Enum.GetValues<AttributeId>();
 		for (int i = 0; i < attributes.Length; i++)
 			Put(2 + (i % 4) * 27, 4 + i / 4, $"{AttributeName(attributes[i])}: {_hero.Attributes.GetValue(attributes[i])}", Ink, 26);
@@ -147,7 +147,7 @@ internal sealed partial class InventoryPanel : CanvasLayer
 			Put(4, 25, $"{chosen.Definition.Name} x{chosen.Quantity}", Accent, 103);
 			Put(4, 26, "Требования: " + JoinOrNone(chosen.Definition.Requirements.Select(pair => $"{AttributeName(pair.Key)} {pair.Value}")), Ink, 103);
 			Put(4, 27, "Бонусы: " + JoinOrNone(chosen.Definition.AttributeBonuses.Select(pair => $"+{pair.Value} {AttributeName(pair.Key)}")
-				.Concat(chosen.Definition.StatBonuses.Select(pair => $"+{pair.Value} макс. {(pair.Key == DerivedStatId.MaxHealth ? "HP" : "MP")}"))), Ink, 103);
+				.Concat(chosen.Definition.StatBonuses.Select(pair => $"+{pair.Value} {StatName(pair.Key)}"))), Ink, 103);
 			var targets = Targets(chosen);
 			Put(4, 28, locked ? "[ТОЛЬКО ПРОСМОТР] Смена снаряжения доступна на базе."
 				: _equipmentFocused ? "[ENTER / E] снять в рюкзак"
@@ -184,6 +184,11 @@ internal sealed partial class InventoryPanel : CanvasLayer
 		AttributeId.Strength => "Сила", AttributeId.Dexterity => "Ловкость", AttributeId.Constitution => "Телосложение",
 		AttributeId.Intelligence => "Интеллект", AttributeId.Wisdom => "Мудрость", AttributeId.Willpower => "Воля",
 		AttributeId.Perception => "Восприятие", AttributeId.Luck => "Удача", _ => stat.ToString(),
+	};
+	private static string StatName(DerivedStatId stat) => stat switch
+	{
+		DerivedStatId.MaxHealth => "макс. HP", DerivedStatId.MaxMana => "макс. MP",
+		DerivedStatId.Armor => "броня", DerivedStatId.MaxActionPoints => "макс. AP", _ => stat.ToString(),
 	};
 	private static string SlotName(EquipmentSlot slot) => slot switch
 	{

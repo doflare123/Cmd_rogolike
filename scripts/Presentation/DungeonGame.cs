@@ -38,6 +38,10 @@ public partial class DungeonGame : Node2D
 	private DungeonMap _map = null!;
 	private PreparationSession _session = null!;
 	private InventoryPanel _inventoryPanel = null!;
+	private CombatPanel? _combatPanel;
+	private double _combatEntrance = -1;
+	internal bool IsEnteringCombat => _combatEntrance >= 0;
+	internal DungeonMap? CurrentMap => _session.Map;
 	private int _requestedSeed;
 	private string _status = string.Empty;
 
@@ -60,11 +64,40 @@ public partial class DungeonGame : Node2D
 			GetViewport().SetInputAsHandled();
 			return;
 		}
+		if (IsEnteringCombat && key.Keycode is not Key.R and not Key.Escape)
+		{
+			GetViewport().SetInputAsHandled();
+			return;
+		}
 
+		if (_combatPanel?.IsJournalOpen == true && key.Keycode != Key.R)
+		{
+			_combatPanel.HandleKey(key);
+			GetViewport().SetInputAsHandled();
+			return;
+		}
 		if (key.Keycode == Key.I && !key.Echo)
 		{
 			_inventoryPanel.Refresh();
 			_inventoryPanel.Show();
+			GetViewport().SetInputAsHandled();
+			return;
+		}
+
+		if (key.Keycode == Key.R && !key.Echo)
+		{
+			StartNewWorld(0);
+			GetViewport().SetInputAsHandled();
+			return;
+		}
+		if (key.Keycode == Key.Escape)
+		{
+			GetTree().Quit();
+			return;
+		}
+		if (_combatPanel is not null)
+		{
+			_combatPanel.HandleKey(key);
 			GetViewport().SetInputAsHandled();
 			return;
 		}
@@ -82,17 +115,17 @@ public partial class DungeonGame : Node2D
 			case Key.Space:
 				TryOpenAdjacentDoor();
 				break;
-			case Key.R when !key.Echo:
-				StartNewWorld(0);
-				break;
-			case Key.Escape:
-				GetTree().Quit();
-				break;
 			default:
 				return;
 		}
 
 		GetViewport().SetInputAsHandled();
+	}
+
+	public override void _UnhandledInput(InputEvent @event)
+	{
+		if (!_inventoryPanel.Visible && @event is InputEventMouseButton mouse && _combatPanel?.HandleMouse(mouse) == true)
+			GetViewport().SetInputAsHandled();
 	}
 
 	public override void _Draw()
@@ -103,15 +136,33 @@ public partial class DungeonGame : Node2D
 			_map,
 			_status,
 			GetViewportRect().Size,
-			new AsciiRenderOptions(FontSize, CellWidth, CellHeight));
+			new AsciiRenderOptions(FontSize, CellWidth, CellHeight),
+			IsEnteringCombat ? (float)(0.5 + Math.Sin(_combatEntrance * 12) * 0.5) : 0);
+		if (_combatEntrance > 0.85)
+			DrawRect(GetViewportRect(), new Color(0, 0, 0, (float)Math.Clamp((_combatEntrance - 0.85) / 0.3, 0, 1)));
+	}
+
+	public override void _Process(double delta)
+	{
+		if (!IsEnteringCombat) return;
+		_combatEntrance += delta;
+		if (_combatEntrance >= 1.15)
+		{
+			_combatEntrance = -1;
+			CreateCombatPanel();
+		}
+		QueueRedraw();
 	}
 
 	private void StartNewWorld(int requestedSeed)
 	{
 		_requestedSeed = requestedSeed;
+		_combatEntrance = -1;
+		if (_combatPanel is not null) { RemoveChild(_combatPanel); _combatPanel.QueueFree(); _combatPanel = null; }
 		_session = new PreparationSession();
 		if (_inventoryPanel is not null) { RemoveChild(_inventoryPanel); _inventoryPanel.QueueFree(); }
 		_inventoryPanel = new InventoryPanel(_session.Hero, EnterExpedition, CloseInventory);
+		_inventoryPanel.Layer = 2;
 		AddChild(_inventoryPanel);
 		QueueRedraw();
 	}
@@ -145,16 +196,37 @@ public partial class DungeonGame : Node2D
 				result.DoorExpansion
 					?? throw new InvalidOperationException("Door movement result has no expansion data.")),
 			PlayerMoveOutcome.BlockedByEntity when result.BlockingEntity is Enemy enemy
-				=> $"{enemy.Name} преграждает путь. Бой пока не реализован.",
+				=> $"{enemy.Name} преграждает путь.",
 			PlayerMoveOutcome.BlockedByEntity => "Клетка занята.",
 			PlayerMoveOutcome.BlockedByTerrain when result.BlockingTile == DungeonTile.Wall
 				=> "Здесь стена (#).",
 			PlayerMoveOutcome.BlockedByTerrain => "За пределами открытой карты — пустота.",
 			PlayerMoveOutcome.PlayerIsDead => "Мёртвый персонаж не может двигаться.",
+			PlayerMoveOutcome.InCombat => "Сначала завершите бой.",
 			_ => throw new ArgumentOutOfRangeException(nameof(result.Outcome), result.Outcome, null),
 		};
 
+		ShowCombatIfNeeded();
 		QueueRedraw();
+	}
+
+	private void ShowCombatIfNeeded()
+	{
+		if (_map.Combat is null || _combatPanel is not null || IsEnteringCombat) return;
+		_combatEntrance = 0;
+		_status = $"Вы вошли в комнату. Обнаружены противники: {_map.Combat.Enemies.Count}. Начинается бой...";
+	}
+
+	private void CreateCombatPanel()
+	{
+		if (_map.Combat is null || _combatPanel is not null) return;
+		_combatPanel = new CombatPanel(_map, () =>
+		{
+			if (_combatPanel is not null) { RemoveChild(_combatPanel); _combatPanel.QueueFree(); _combatPanel = null; }
+			_status = "Победа. Двери доступны, исследование продолжается.";
+			QueueRedraw();
+		});
+		AddChild(_combatPanel);
 	}
 
 	private void TryOpenAdjacentDoor()
@@ -167,6 +239,7 @@ public partial class DungeonGame : Node2D
 					?? throw new InvalidOperationException("Door interaction result has no expansion data.")),
 			PlayerDoorInteractionOutcome.NoAdjacentDoor => "Рядом нет закрытой двери (+).",
 			PlayerDoorInteractionOutcome.PlayerIsDead => "Мёртвый персонаж не может открывать двери.",
+			PlayerDoorInteractionOutcome.InCombat => "Двери доступны после завершения боя.",
 			_ => throw new ArgumentOutOfRangeException(nameof(result.Outcome), result.Outcome, null),
 		};
 		QueueRedraw();
