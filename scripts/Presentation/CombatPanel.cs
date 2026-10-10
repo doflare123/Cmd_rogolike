@@ -164,6 +164,7 @@ internal sealed partial class CombatPanel : CanvasLayer
 			CombatCommandResult.NotEnoughActionPoints => "Недостаточно AP. SPACE завершает ход.",
 			CombatCommandResult.ReplacementUnavailable => "Замена доступна раз в два собственных хода.",
 			CombatCommandResult.WrongPhase => "Сейчас действие недоступно.",
+			CombatCommandResult.SourceUnavailable => "Источник карты неактивен (Dormant). Карту можно заменить.",
 			_ => replacement ? "Карта заменена без расхода AP." : "",
 		};
 	}
@@ -172,11 +173,13 @@ internal sealed partial class CombatPanel : CanvasLayer
 	{
 		string actor = entry.ActorId == Battle.Player.Id ? "Герой" : EnemyLabel(entry.ActorId);
 		string target = entry.TargetId == Battle.Player.Id ? "герой" : EnemyLabel(entry.TargetId);
-		string action = entry.ActorId == Battle.Player.Id ? _playedCardName : "Атака";
+		string action = entry.ActionName ?? (entry.ActorId == Battle.Player.Id ? _playedCardName : "Атака");
 		string message = entry.Kind switch
 		{
 			CombatEventKind.Attack => $"{actor}: {action} -> {target}: {entry.Damage} урона, {entry.Blocked} поглощено.",
-			CombatEventKind.Block => $"Герой: {_playedCardName}, +{entry.Blocked} блока от брони.",
+			CombatEventKind.Block => $"{actor}: {action}, +{entry.Blocked} блока.",
+			CombatEventKind.Charge => $"{actor}: подготовка сильного удара в следующем раунде.",
+			CombatEventKind.BlockExpired => $"{actor}: остаток блока ({entry.Blocked}) исчез перед действием.",
 			CombatEventKind.PlayerTurn => $"Ход героя {Battle.PlayerTurn}: AP восстановлены, новая рука.",
 			CombatEventKind.Victory => "Победа. Можно продолжить исследование.",
 			_ => "Герой погиб. R создаёт нового героя без прежних вещей.",
@@ -187,7 +190,7 @@ internal sealed partial class CombatPanel : CanvasLayer
 	private string EnemyLabel(Guid? id)
 	{
 		int index = Battle.Enemies.ToList().FindIndex(enemy => enemy.Id == id);
-		return index < 0 ? "-" : $"e{index + 1}";
+		return index < 0 ? "-" : $"e{index + 1} {Battle.Enemies[index].Name}";
 	}
 
 	private CombatAsciiFrame Compose()

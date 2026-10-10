@@ -1,6 +1,7 @@
 using CmdRoguelike.Domain.Entities;
 using CmdRoguelike.Domain.Items;
 using CmdRoguelike.Domain.Stats;
+using CmdRoguelike.Domain.Combat;
 using Godot;
 
 namespace CmdRoguelike.Presentation;
@@ -8,7 +9,7 @@ namespace CmdRoguelike.Presentation;
 /// <summary>Keyboard-driven terminal view. Only HandleKey issues domain commands.</summary>
 internal sealed partial class InventoryPanel : CanvasLayer
 {
-	private const int Columns = 112, Rows = 35;
+	private const int Columns = 112, Rows = 42;
 	private readonly PlayerCharacter _hero;
 	private readonly Action _start, _close;
 	private readonly Node2D _canvas = new();
@@ -154,13 +155,27 @@ internal sealed partial class InventoryPanel : CanvasLayer
 				: targets.Length == 0 ? $"Материал. Максимальный стек: {chosen.Definition.MaximumStack}."
 				: $"[ENTER / E] надеть: {SlotName(targets[_targetIndex % targets.Length])}" + (targets.Length > 1 ? "   [Q] другой слот" : ""), Amber, 103);
 			if (chosen.Location == ItemLocation.Equipment && chosen.State == EquipmentState.Dormant)
-				Put(4, 29, "DORMANT: требования не выполнены; бонусы отключены, слот занят.", Amber, 103);
+				Put(4, 29, "DORMANT: требования не выполнены; бонусы и карты отключены, слот занят.", Amber, 103);
+			else Put(4, 29, "Карты: " + JoinOrNone(chosen.Definition.CombatCards.Select(grant =>
+				$"{grant.Card.Name} x{grant.Copies} ({CardDetails(grant.Card)})")), Ink, 103);
 		}
-		Put(2, 32, "> " + Status, Amber, 108);
-		Put(2, 34, locked ? "[W/S] выбор  [A/D/TAB] панель  [I/ESC] к карте"
+		var deck = CombatDeckBuilder.Build(_hero);
+		var groups = deck.GroupBy(card => (card.SourceItemId, card.Id)).ToArray();
+		Box(2, 31, 108, 8, $"КОЛОДА / {deck.Count} КАРТ / РУКА 5", false);
+		for (int i = 0; i < Math.Min(groups.Length, 10); i++)
+		{
+			var card = groups[i].First();
+			Put(4 + (i / 5) * 53, 32 + i % 5,
+				$"{card.Name} x{groups[i].Count()}: {CardDetails(card)} / {card.SourceName}", Ink, 51);
+		}
+		if (groups.Length > 10) Put(4, 37, $"Ещё {groups.Length - 10} видов карт; источники показаны в описаниях предметов.", Muted, 103);
+		Put(2, 40, "> " + Status, Amber, 108);
+		Put(2, 41, locked ? "[W/S] выбор  [A/D/TAB] панель  [I/ESC] к карте"
 			: "[W/S] выбор  [A/D/TAB] панель  [ENTER/E] действие  [F] в экспедицию  [ESC] выход", Accent, 108);
 		return lines;
 	}
+	private string CardDetails(CombatCard card) => $"{card.ActionPointCost} AP, " +
+		(card.Kind == CombatCardKind.Attack ? $"{card.Power} урона" : $"{CombatRules.DefenseBlock(_hero, card)} блока ({card.Power}% брони)");
 	private void Render()
 	{
 		Vector2 viewport = GetViewport().GetVisibleRect().Size;

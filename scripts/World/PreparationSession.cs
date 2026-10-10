@@ -1,6 +1,7 @@
 using CmdRoguelike.Domain.Entities;
 using CmdRoguelike.Domain.Items;
 using CmdRoguelike.Domain.Stats;
+using CmdRoguelike.Domain.Combat;
 using CmdRoguelike.Generation;
 using Godot;
 
@@ -35,12 +36,19 @@ internal static class PrototypeItems
 		{
 			(new("training-sword", "Учебный меч", slots: new[] { EquipmentSlot.MainHand },
 				requirements: new Dictionary<AttributeId, int> { [AttributeId.Strength] = 2 },
-				attributeBonuses: new Dictionary<AttributeId, int> { [AttributeId.Strength] = 2 }), 1),
+				attributeBonuses: new Dictionary<AttributeId, int> { [AttributeId.Strength] = 2 },
+				combatCards: new[] { new EquipmentCardGrant(new("slash", "Рубящий удар", CombatCardKind.Attack, 1, 2), 3) }), 1),
 			(new("training-armor", "Учебный доспех", slots: new[] { EquipmentSlot.Torso },
 				requirements: new Dictionary<AttributeId, int> { [AttributeId.Strength] = 2 },
 				statBonuses: new Dictionary<DerivedStatId, int> { [DerivedStatId.MaxHealth] = 5, [DerivedStatId.Armor] = 2 }), 1),
 			(new("strength-ring", "Кольцо силы", slots: new[] { EquipmentSlot.RingLeft, EquipmentSlot.RingRight },
 				attributeBonuses: new Dictionary<AttributeId, int> { [AttributeId.Strength] = 2 }), 1),
 			(new("feather", "Перо", maximumStack: 100), 125),
+			(new("training-mace", "Учебная булава", slots: new[] { EquipmentSlot.MainHand },
+				requirements: new Dictionary<AttributeId, int> { [AttributeId.Strength] = 2 },
+				combatCards: new[] { new EquipmentCardGrant(new("crush", "Сокрушение", CombatCardKind.Attack, 2, 4), 2) }), 1),
+			(new("training-shield", "Учебный щит", slots: new[] { EquipmentSlot.OffHand },
+				statBonuses: new Dictionary<DerivedStatId, int> { [DerivedStatId.Armor] = 1 },
+				combatCards: new[] { new EquipmentCardGrant(new("shield", "Щит", CombatCardKind.Defense, 1, 200), 2) }), 1),
 		});
 }

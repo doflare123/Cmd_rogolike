@@ -46,6 +46,8 @@ internal static class CombatAsciiRenderer
 		Amber = new("e8bc78"), Danger = new("ec8f89"), Stone = new("435658"), Floor = new("263437"), Shadow = new("344748");
 	private static readonly string[] HeroArt = { "    .-.    ", "    (@)  / ", "   /|#|\\/  ", "  / |#|    ", "   /   \\   " };
 	private static readonly string[] EnemyArt = { "    .---.    ", "   / o o \\   ", "   |  v  |   ", "  /|/---\\|\\  ", "   /     \\   " };
+	private static readonly string[] GuardianArt = { "    .---.    ", "    |o o|    ", " .--|---|--. ", " | /\\ | /|  ", " | \\/ |/ \\  " };
+	private static readonly string[] BruteArt = { "   .-----.   ", "  / >   < \\  ", " /|  ===  |\\ ", "[ |=======| ]", "  /|     |\\  " };
 	private static readonly string[] SwordArt = { "        / ", "       /  ", "      /   ", "   --+--  ", "    /     " };
 	private static readonly string[] ShieldArt = { "  .----.  ", "  | /\\ |  ", "  | \\/ |  ", "   \\  /   ", "    \\/    " };
 
@@ -80,7 +82,7 @@ internal static class CombatAsciiRenderer
 
 		var selected = battle.Enemies.Where(enemy => view.Health[enemy.Id] > 0).ElementAtOrDefault(targetIndex);
 		int selectedIndex = selected is null ? 0 : battle.Enemies.ToList().IndexOf(selected);
-		Guid? activeId = step?.Event is { Kind: CombatEventKind.Attack } entry
+		Guid? activeId = step?.Event is CombatEvent entry
 			? entry.ActorId == hero.Id ? entry.TargetId : entry.ActorId : null;
 		if (activeId is Guid active)
 			selectedIndex = Math.Max(0, battle.Enemies.ToList().FindIndex(enemy => enemy.Id == active));
@@ -94,19 +96,28 @@ internal static class CombatAsciiRenderer
 			bool alive = view.Health[enemy.Id] > 0;
 			var intent = view.Intents.FirstOrDefault(intent => intent.EnemyId == enemy.Id);
 			Color color = !alive ? Muted : enemy == selected || enemy.Id == activeId ? Accent : Danger;
+			Put(x - 1, y - 2, enemy.Name, color, 18);
 			Put(x - 1, y - 1, $"{(enemy == selected ? '>' : ' ')} e{i + 1} HP {view.Health[enemy.Id]}/{enemy.MaxHealth}".PadRight(18), color, 18);
 			int offset = step?.Event?.ActorId == enemy.Id ? -(int)Math.Round(lunge * 8) : 0;
 			int hit = step?.Kind == CombatAnimationKind.Attack && step.Event?.TargetId == enemy.Id && progress > 0.45f
 				? (int)Math.Round(MathF.Sin(progress * MathF.PI * 5)) : 0;
-			if (alive) Sprite(frame, x + offset + hit, y, EnemyArt, color);
+			if (alive) Sprite(frame, x + offset + hit, y,
+				enemy is GuardianEnemy ? GuardianArt : enemy is BruteEnemy ? BruteArt : EnemyArt, color);
 			else
 			{
 				frame.Clear(x, y, 13, 5);
 				Put(x + 3, y + 3, "_x_x_", Muted);
 			}
 			Put(x, y + 5, " '-------' ", Shadow);
-			Put(x - 1, y + 6, alive ? $" ! {intent?.Damage} -> @ " : " ПОВЕРЖЕН ", color, 17);
+			string intention = intent?.Action switch
+			{
+				EnemyActionKind.Guard => $" ! +{intent.Block} блока",
+				EnemyActionKind.Charge => " ! Готовит удар",
+				_ => intent?.Damage > 1 ? $" ! Удар {intent.Damage} -> @" : $" ! {intent?.Damage} -> @",
+			};
+			Put(x - 1, y + 6, alive ? intention : " ПОВЕРЖЕН ", color, 18);
 			Put(x - 1, y + 7, alive ? intent?.BeforePlayer == true ? " ДО ГЕРОЯ " : " ПОСЛЕ ГЕРОЯ " : "", Muted, 17);
+			if (alive && view.EnemyBlock[enemy.Id] > 0) Put(x - 1, y + 8, $" БЛОК {view.EnemyBlock[enemy.Id]}", Amber, 18);
 		}
 		Effects(frame, battle, animation, firstEnemy);
 		string EnemyLabel(Guid id) => "e" + (battle.Enemies.ToList().FindIndex(enemy => enemy.Id == id) + 1);
@@ -128,8 +139,9 @@ internal static class CombatAsciiRenderer
 			Put(x + 2, y + 1, $"Цена: {card.ActionPointCost} AP", Ink, 12);
 			Sprite(frame, x + 3, y + 2, card.Kind == CombatCardKind.Attack ? SwordArt : ShieldArt, color);
 			Put(x + 2, y + 7, card.Kind == CombatCardKind.Attack ? $"{card.Power} урона" : $"{battle.DefenseBlock(card)} блока", Ink, 12);
-			Put(x + 2, y + 8, card.Kind == CombatCardKind.Defense ? $"{card.Power}% брони" : "Одна цель", Muted, 12);
-			if (i == cardIndex && view.Phase == CombatPhase.PlayerTurn && !animation.IsBusy) Put(x + 2, y + 9, "[ENTER]", Accent, 12);
+			Put(x + 2, y + 8, card.SourceName, Muted, 12);
+			if (!battle.IsCardAvailable(card)) Put(x + 2, y + 9, "DORMANT", Danger, 12);
+			else if (i == cardIndex && view.Phase == CombatPhase.PlayerTurn && !animation.IsBusy) Put(x + 2, y + 9, "[ENTER]", Accent, 12);
 		}
 		if (view.Hand.Count == 0) Put(35, 35, "Рука появится в начале хода героя.", Muted);
 		FlyingCard(frame, animation);
@@ -181,6 +193,8 @@ internal static class CombatAsciiRenderer
 	private static string AnimationLabel(CombatAnimationKind kind) => kind switch
 	{
 		CombatAnimationKind.Attack => "УДАР", CombatAnimationKind.Defense => "ЗАЩИТА",
+		CombatAnimationKind.Charge => "ПОДГОТОВКА УДАРА",
+		CombatAnimationKind.BlockExpired => "БЛОК ИСЧЕЗАЕТ",
 		CombatAnimationKind.PlayCard => "РОЗЫГРЫШ КАРТЫ", CombatAnimationKind.DiscardCard => "КАРТА В СБРОС",
 		CombatAnimationKind.DrawCard or CombatAnimationKind.Deal => "ДОБОР КАРТ", _ => "ЗАВЕРШЕНИЕ",
 	};
@@ -193,15 +207,20 @@ internal static class CombatAsciiRenderer
 		var step = animation.Current;
 		if (step is null) return;
 		float p = animation.Progress;
+		var target = step.Event?.TargetId == battle.Player.Id ? new Vector2I(24, 17)
+			: EnemyPosition(Math.Max(0, battle.Enemies.ToList().FindIndex(enemy => enemy.Id == step.Event?.TargetId) - firstEnemy));
+		if (step.Kind == CombatAnimationKind.Charge)
+		{
+			Box(frame, target.X - 1, target.Y - 1, 15, 7, "", Danger);
+			frame.Write(target.X - 1, target.Y - 2, "ГОТОВИТ УДАР", Amber, 18);
+		}
 		if (step.Kind == CombatAnimationKind.Defense || step.Kind == CombatAnimationKind.Attack && step.Event?.Blocked > 0 && p > 0.4f)
 		{
 			int width = 13 + (int)Math.Round(MathF.Sin(p * MathF.PI) * 4);
-			Box(frame, 22, 16, width, 7, "", Amber);
-			frame.Write(24, 15, step.Kind == CombatAnimationKind.Defense ? $"+{step.Event?.Blocked} БЛОКА" : "БЛОК!", Amber, 17);
+			Box(frame, target.X - 2, target.Y - 1, width, 7, "", Amber);
+			frame.Write(target.X, target.Y - 2, step.Kind == CombatAnimationKind.Defense ? $"+{step.Event?.Blocked} БЛОКА" : "БЛОК!", Amber, 17);
 		}
 		if (step.Kind != CombatAnimationKind.Attack || p < 0.42f || step.Event is not CombatEvent entry) return;
-		var target = entry.TargetId == battle.Player.Id ? new Vector2I(24, 17)
-			: EnemyPosition(Math.Max(0, battle.Enemies.ToList().FindIndex(enemy => enemy.Id == entry.TargetId) - firstEnemy));
 		frame.Write(target.X + 1, target.Y + 2, p < 0.72f ? "  / * / " : " *     * ", entry.Damage > 0 ? Danger : Amber);
 		frame.Write(target.X, target.Y - 2, entry.Damage > 0 ? $" -{entry.Damage} HP " : " ПОГЛОЩЕНО ", entry.Damage > 0 ? Danger : Amber, 16);
 	}

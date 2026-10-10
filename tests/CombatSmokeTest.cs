@@ -24,7 +24,8 @@ public partial class CombatSmokeTest : Node
 			KnowledgeSections();
 			RegistryRemoval();
 			WorldEncounter();
-			GD.Print("Combat smoke test passed: initiative cap, preview, AP, cards, replacement, armor, death, hidden sections, world cleanup.");
+			CombatContentChecks.Run();
+			GD.Print("Combat smoke test passed: initiative, AP, equipment cards, Dormant, deck conservation, enemy intents/block/charge, deterministic factory, hidden sections, cleanup.");
 			GetTree().Quit();
 		}
 		catch (Exception error) { GD.PushError(error.ToString()); GetTree().Quit(1); }

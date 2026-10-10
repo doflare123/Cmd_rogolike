@@ -21,6 +21,8 @@ public partial class PreparationUiSmokeTest : Node
 			Check(panel.ScreenText.Contains("надеть: Правое кольцо"), "Ring slot selection failed.");
 			Press(game, Key.Enter, Key.Up, Key.Up, Key.Enter, Key.Enter);
 			Check(panel.ScreenText.Contains("HP 10/15"), "UI did not update HP.");
+			Check(panel.ScreenText.Contains("КОЛОДА / 13 КАРТ") && panel.ScreenText.Contains("Рубящий удар x3")
+				&& panel.ScreenText.Contains("1 AP, 2 урона"), "Preparation omitted equipment deck or card details.");
 			Press(game, Key.Tab, Key.Down, Key.Enter);
 			Check(panel.ScreenText.Contains("HP 10/10"), "Keyboard unequip failed.");
 			Press(game, Key.Tab, Key.Up, Key.Up, Key.Enter);

@@ -7,6 +7,7 @@ namespace CmdRoguelike.Presentation;
 internal sealed class CombatVisualState
 {
 	public Dictionary<Guid, int> Health { get; } = new();
+	public Dictionary<Guid, int> EnemyBlock { get; } = new();
 	public List<CombatCard> Hand { get; } = new();
 	public CombatPhase Phase { get; set; }
 	public int Round { get; set; }
@@ -31,13 +32,17 @@ internal sealed class CombatVisualState
 			Intents = battle.Intents.ToArray(),
 		};
 		view.Health.Add(battle.Player.Id, battle.Player.Health);
-		foreach (var enemy in battle.Enemies) view.Health.Add(enemy.Id, enemy.Health);
+		foreach (var enemy in battle.Enemies)
+		{
+			view.Health.Add(enemy.Id, enemy.Health);
+			view.EnemyBlock.Add(enemy.Id, battle.GetEnemyBlock(enemy.Id));
+		}
 		view.Hand.AddRange(battle.Hand);
 		return view;
 	}
 }
 
-internal enum CombatAnimationKind { PlayCard, DiscardCard, DrawCard, Attack, Defense, Deal, Finish }
+internal enum CombatAnimationKind { PlayCard, DiscardCard, DrawCard, Attack, Defense, Charge, BlockExpired, Deal, Finish }
 internal enum CombatVisualCommand { BeginRound, PlayCard, ReplaceCard, EndTurn }
 internal sealed record CombatAnimationStep(CombatAnimationKind Kind, double Duration, CombatEvent? Event = null,
 	CombatCard? Card = null, int CardIndex = 0, bool FromHand = false);
@@ -46,6 +51,7 @@ internal sealed record CombatAnimationStep(CombatAnimationKind Kind, double Dura
 internal sealed class CombatAnimation
 {
 	private readonly Queue<CombatAnimationStep> _steps = new();
+	private readonly Guid _playerId;
 	private CombatVisualState? _final;
 	private double _elapsed;
 	private bool _applied;
@@ -55,7 +61,11 @@ internal sealed class CombatAnimation
 	public float Progress => Current is null ? 0 : (float)Math.Clamp(_elapsed / Current.Duration, 0, 1);
 	public event Action<CombatEvent>? EventShown;
 
-	public CombatAnimation(CombatEncounter battle) => View = CombatVisualState.Capture(battle);
+	public CombatAnimation(CombatEncounter battle)
+	{
+		_playerId = battle.Player.Id;
+		View = CombatVisualState.Capture(battle);
+	}
 
 	public void Start(CombatVisualState before, CombatEncounter battle, CombatVisualCommand command, int index)
 	{
@@ -86,6 +96,8 @@ internal sealed class CombatAnimation
 			{
 				CombatEventKind.Attack => CombatAnimationKind.Attack,
 				CombatEventKind.Block => CombatAnimationKind.Defense,
+				CombatEventKind.Charge => CombatAnimationKind.Charge,
+				CombatEventKind.BlockExpired => CombatAnimationKind.BlockExpired,
 				CombatEventKind.PlayerTurn => CombatAnimationKind.Deal,
 				_ => CombatAnimationKind.Finish,
 			};
@@ -128,9 +140,15 @@ internal sealed class CombatAnimation
 		{
 			case CombatEventKind.Attack:
 				if (entry.TargetId is Guid target) View.Health[target] = Math.Max(0, View.Health[target] - entry.Damage);
-				View.Block = Math.Max(0, View.Block - entry.Blocked);
+				if (entry.TargetId == _playerId) View.Block = Math.Max(0, View.Block - entry.Blocked);
+				else if (entry.TargetId is Guid enemyId)
+					View.EnemyBlock[enemyId] = Math.Max(0, View.EnemyBlock[enemyId] - entry.Blocked);
 				break;
-			case CombatEventKind.Block: View.Block += entry.Blocked; break;
+			case CombatEventKind.Block:
+				if (entry.ActorId == _playerId) View.Block += entry.Blocked;
+				else View.EnemyBlock[entry.ActorId] += entry.Blocked;
+				break;
+			case CombatEventKind.BlockExpired: View.EnemyBlock[entry.ActorId] = 0; break;
 			case CombatEventKind.PlayerTurn:
 				if (_final is not null)
 				{

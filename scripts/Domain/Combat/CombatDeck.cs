@@ -9,11 +9,10 @@ internal sealed class CombatDeck
 	public int DrawCount => _draw.Count;
 	public int DiscardCount => _discard.Count;
 
-	public CombatDeck(CombatOptions options, int seed)
+	public CombatDeck(IReadOnlyList<CombatCard> cards, int seed)
 	{
 		_random = new Random(seed);
-		_draw.AddRange(Enumerable.Repeat(options.Attack, options.AttackCards));
-		_draw.AddRange(Enumerable.Repeat(options.Defense, options.DefenseCards));
+		_draw.AddRange(cards);
 		Shuffle();
 	}
 

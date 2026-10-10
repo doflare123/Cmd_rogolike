@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CmdRoguelike.Domain.Stats;
+using CmdRoguelike.Domain.Combat;
 
 namespace CmdRoguelike.Domain.Items;
 
@@ -22,7 +23,7 @@ public sealed class BodyPlan
 	}
 }
 
-/// <summary>Immutable prototype definition. Initial equipment supports nonnegative flat bonuses.</summary>
+/// <summary>Immutable equipment/material definition with nonnegative flat bonuses and card grants.</summary>
 public sealed class ItemDefinition
 {
 	public string Id { get; }
@@ -32,12 +33,14 @@ public sealed class ItemDefinition
 	public IReadOnlyDictionary<AttributeId, int> Requirements { get; }
 	public IReadOnlyDictionary<AttributeId, int> AttributeBonuses { get; }
 	public IReadOnlyDictionary<DerivedStatId, int> StatBonuses { get; }
+	public IReadOnlyList<EquipmentCardGrant> CombatCards { get; }
 
 	public ItemDefinition(string id, string name, int maximumStack = 1,
 		IEnumerable<EquipmentSlot>? slots = null,
 		IReadOnlyDictionary<AttributeId, int>? requirements = null,
 		IReadOnlyDictionary<AttributeId, int>? attributeBonuses = null,
-		IReadOnlyDictionary<DerivedStatId, int>? statBonuses = null)
+		IReadOnlyDictionary<DerivedStatId, int>? statBonuses = null,
+		IEnumerable<EquipmentCardGrant>? combatCards = null)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(id);
 		ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -51,6 +54,11 @@ public sealed class ItemDefinition
 		Requirements = Copy(requirements);
 		AttributeBonuses = Copy(attributeBonuses);
 		StatBonuses = Copy(statBonuses);
+		var grants = (combatCards ?? Array.Empty<EquipmentCardGrant>()).ToArray();
+		if (grants.Any(grant => grant is null) || (grants.Length > 0 && Slots.Count == 0)
+			|| grants.Sum(grant => (long)grant.Copies) > 1000)
+			throw new ArgumentException("Cards require non-stackable equipment and a valid deck size.");
+		CombatCards = Array.AsReadOnly(grants);
 	}
 
 	private static IReadOnlyDictionary<T, int> Copy<T>(IReadOnlyDictionary<T, int>? source) where T : struct, Enum

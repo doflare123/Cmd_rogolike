@@ -122,7 +122,7 @@ public partial class DungeonGenerationSmokeTest : Node
 						throw new InvalidOperationException($"Seed {seed}: unexpected player registration.");
 					}
 					break;
-				case BasicEnemy:
+				case Enemy:
 					break;
 				default:
 					throw new InvalidOperationException(

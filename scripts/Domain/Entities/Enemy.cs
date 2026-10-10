@@ -1,14 +1,15 @@
 using Godot;
+using CmdRoguelike.Domain.Combat;
 
 namespace CmdRoguelike.Domain.Entities;
 
 /// <summary>
-/// Базовый класс всех враждебных акторов. После появления соответствующих систем
-/// сюда или в отдельные стратегии будет добавлено поведение ИИ и боя.
+/// Базовый класс враждебных акторов; стратегия объявляет действия, встреча их исполняет.
 /// </summary>
 public abstract class Enemy : Actor
 {
 	public int AttackPower { get; }
+	public virtual IEnemyBehavior Behavior => EnemyBehaviors.Attacker;
 
 	protected Enemy(
 		Vector2I position,

@@ -10,6 +10,10 @@ public sealed record CombatCard
 	public CombatCardKind Kind { get; }
 	public int ActionPointCost { get; }
 	public int Power { get; }
+	public Guid? SourceItemId { get; private init; }
+	public string SourceName { get; private init; } = "Герой";
+	internal CombatCard FromEquipment(Guid itemId, string itemName)
+		=> this with { SourceItemId = itemId, SourceName = itemName };
 
 	public CombatCard(string id, string name, CombatCardKind kind, int actionPointCost, int power)
 	{

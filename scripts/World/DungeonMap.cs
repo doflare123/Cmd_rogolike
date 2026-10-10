@@ -56,7 +56,7 @@ public sealed class DungeonMap
 			_grid,
 			_doors,
 			_entities,
-			new EnemyFactory());
+			new EnemyFactory(new GodotRandomSource(unchecked(seed * 887 ^ 0x45f23))));
 
 		DungeonRegion firstRegion = _regionGenerator.Generate(
 			Vector2I.Zero,
