@@ -46,8 +46,17 @@ internal static class CombatAsciiRenderer
 		Amber = new("e8bc78"), Danger = new("ec8f89"), Stone = new("435658"), Floor = new("263437"), Shadow = new("344748");
 	private static readonly string[] HeroArt = { "    .-.    ", "    (@)  / ", "   /|#|\\/  ", "  / |#|    ", "   /   \\   " };
 	private static readonly string[] EnemyArt = { "    .---.    ", "   / o o \\   ", "   |  v  |   ", "  /|/---\\|\\  ", "   /     \\   " };
-	private static readonly string[] GuardianArt = { "    .---.    ", "    |o o|    ", " .--|---|--. ", " | /\\ | /|  ", " | \\/ |/ \\  " };
+	private static readonly string[] GuardianArt =
+	{
+		"     .---.   ",
+		"     |o_o| / ",
+		" .---./##|/  ",
+		" | + |###|   ",
+		"  \\_/ / \\   ",
+	};
 	private static readonly string[] BruteArt = { "   .-----.   ", "  / >   < \\  ", " /|  ===  |\\ ", "[ |=======| ]", "  /|     |\\  " };
+	private static readonly string[] OakArt = { "  .-***-***-. ", " (***o_o****) ", "  '--|#|--'   ", "    /|#|\\     ", "  _/ |#| \\_   " };
+	private static readonly string[] FlameArt = { "     /\\   ", "   / / )  ", "  ( ( / ) ", "   \\  /   ", "    ||    " };
 	private static readonly string[] SwordArt = { "        / ", "       /  ", "      /   ", "   --+--  ", "    /     " };
 	private static readonly string[] ShieldArt = { "  .----.  ", "  | /\\ |  ", "  | \\/ |  ", "   \\  /   ", "    \\/    " };
 
@@ -65,8 +74,8 @@ internal static class CombatAsciiRenderer
 		{
 			CombatPhase.RoundPreview => "НАМЕРЕНИЯ / ENTER НАЧАТЬ РАУНД",
 			CombatPhase.PlayerTurn => "ХОД ГЕРОЯ / ВЫБЕРИТЕ КАРТУ",
-			CombatPhase.Victory => "ПОБЕДА / ENTER К КАРТЕ",
-			_ => "ГЕРОЙ ПОГИБ / R НОВАЯ ПОДГОТОВКА",
+			CombatPhase.Victory => "ПОБЕДА / ENTER ПОЛУЧИТЬ НАГРАДУ",
+			_ => "ГЕРОЙ ПОГИБ / ENTER ВЕРНУТЬСЯ НА БАЗУ",
 		};
 		Put(2, 9, phase, view.Phase == CombatPhase.Defeat ? Danger : Amber);
 		Room(frame);
@@ -102,7 +111,7 @@ internal static class CombatAsciiRenderer
 			int hit = step?.Kind == CombatAnimationKind.Attack && step.Event?.TargetId == enemy.Id && progress > 0.45f
 				? (int)Math.Round(MathF.Sin(progress * MathF.PI * 5)) : 0;
 			if (alive) Sprite(frame, x + offset + hit, y,
-				enemy is GuardianEnemy ? GuardianArt : enemy is BruteEnemy ? BruteArt : EnemyArt, color);
+				enemy is WiseOakEnemy ? OakArt : enemy is GuardianEnemy ? GuardianArt : enemy is BruteEnemy ? BruteArt : EnemyArt, color);
 			else
 			{
 				frame.Clear(x, y, 13, 5);
@@ -116,7 +125,7 @@ internal static class CombatAsciiRenderer
 				_ => intent?.Damage > 1 ? $" ! Удар {intent.Damage} -> @" : $" ! {intent?.Damage} -> @",
 			};
 			Put(x - 1, y + 6, alive ? intention : " ПОВЕРЖЕН ", color, 18);
-			Put(x - 1, y + 7, alive ? intent?.BeforePlayer == true ? " ДО ГЕРОЯ " : " ПОСЛЕ ГЕРОЯ " : "", Muted, 17);
+			Put(x - 1, y + 7, alive ? enemy.IsBoss ? " КОРА20 / ОГОНЬx2" : intent?.BeforePlayer == true ? " ДО ГЕРОЯ " : " ПОСЛЕ ГЕРОЯ " : "", enemy.IsBoss ? Amber : Muted, 18);
 			if (alive && view.EnemyBlock[enemy.Id] > 0) Put(x - 1, y + 8, $" БЛОК {view.EnemyBlock[enemy.Id]}", Amber, 18);
 		}
 		Effects(frame, battle, animation, firstEnemy);
@@ -137,8 +146,8 @@ internal static class CombatAsciiRenderer
 			Color color = i == cardIndex ? Accent : card.Kind == CombatCardKind.Attack ? Danger : Amber;
 			Card(frame, x, y, 16, 11, card.Name.ToUpperInvariant(), color);
 			Put(x + 2, y + 1, $"Цена: {card.ActionPointCost} AP", Ink, 12);
-			Sprite(frame, x + 3, y + 2, card.Kind == CombatCardKind.Attack ? SwordArt : ShieldArt, color);
-			Put(x + 2, y + 7, card.Kind == CombatCardKind.Attack ? $"{card.Power} урона" : $"{battle.DefenseBlock(card)} блока", Ink, 12);
+			Sprite(frame, x + 3, y + 2, card.Kind == CombatCardKind.Attack ? card.DamageAspect == DamageAspect.Fire ? FlameArt : SwordArt : ShieldArt, color);
+			Put(x + 2, y + 7, card.Kind == CombatCardKind.Attack ? $"{card.Power} " + (card.DamageAspect == DamageAspect.Fire ? "огня" : "урона") : $"{battle.DefenseBlock(card)} блока", Ink, 12);
 			Put(x + 2, y + 8, card.SourceName, Muted, 12);
 			if (!battle.IsCardAvailable(card)) Put(x + 2, y + 9, "DORMANT", Danger, 12);
 			else if (i == cardIndex && view.Phase == CombatPhase.PlayerTurn && !animation.IsBusy) Put(x + 2, y + 9, "[ENTER]", Accent, 12);
@@ -151,7 +160,7 @@ internal static class CombatAsciiRenderer
 		Box(frame, 84, 44, 26, 3, "", Accent);
 		Put(86, 45, "[L] ЖУРНАЛ БОЯ", Accent, 22);
 		Put(2, 48, "[A/D] карта  [W/S] цель  [ENTER/E] играть  [Q] заменить  [SPACE] конец хода", Accent, 108);
-		Put(2, 49, "[I] инвентарь  [R] сброс героя  [ESC] выход   Двери доступны после победы.", Muted, 108);
+		Put(2, 49, "[I] инвентарь  [ESC] меню   Выход во время боя означает потерю героя.", Muted, 108);
 		if (journalOpen) Journal(frame, log, journalOffset);
 		return frame;
 	}

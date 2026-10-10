@@ -32,7 +32,7 @@ public static class CombatDeckBuilder
 			&& item.State == EquipmentState.Active).OrderBy(item => item.Slot))
 			foreach (var grant in item.Definition.CombatCards)
 			{
-				cards.AddRange(Enumerable.Repeat(grant.Card.FromEquipment(item.Id, item.Definition.Name), grant.Copies));
+				cards.AddRange(Enumerable.Repeat(grant.Card.FromEquipment(item.Id, item.DisplayName), grant.Copies));
 			}
 		return cards.AsReadOnly();
 	}

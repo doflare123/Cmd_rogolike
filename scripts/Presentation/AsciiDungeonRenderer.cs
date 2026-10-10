@@ -60,7 +60,7 @@ internal sealed class AsciiDungeonRenderer
 		canvas.DrawString(
 			font,
 			new Vector2(Padding, 42),
-			"WASD/стрелки — ход   E/Space — открыть   I — инвентарь   R — сброс героя   Esc — выход",
+			"WASD — ход   E — дверь   I — инвентарь   G — добыча   O — портал возврата   F2 — настройки   Esc — меню",
 			HorizontalAlignment.Left,
 			-1,
 			15,
@@ -121,6 +121,8 @@ internal sealed class AsciiDungeonRenderer
 		{
 			return ("e", EnemyColor);
 		}
+		if (map.IsReturnPortalVisible && map.ReturnPortal == position) return ("O", new Color("b996ff"));
+		if (map.GetVisibleRewardAt(position) is not null) return ("*", ClosedDoorColor);
 
 		return GetTileAppearance(map.GetRevealedTile(position));
 	}

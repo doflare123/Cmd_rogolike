@@ -176,13 +176,15 @@ internal sealed partial class CombatPanel : CanvasLayer
 		string action = entry.ActionName ?? (entry.ActorId == Battle.Player.Id ? _playedCardName : "Атака");
 		string message = entry.Kind switch
 		{
-			CombatEventKind.Attack => $"{actor}: {action} -> {target}: {entry.Damage} урона, {entry.Blocked} поглощено.",
+			CombatEventKind.Attack => $"{actor}: {action} -> {target}: {entry.Damage} урона, {entry.Blocked} поглощено."
+				+ (entry.Mitigated > 0 ? $" Кора снизила урон на {entry.Mitigated}." : "")
+				+ (entry.Aspect == DamageAspect.Fire ? " Огонь." : ""),
 			CombatEventKind.Block => $"{actor}: {action}, +{entry.Blocked} блока.",
 			CombatEventKind.Charge => $"{actor}: подготовка сильного удара в следующем раунде.",
 			CombatEventKind.BlockExpired => $"{actor}: остаток блока ({entry.Blocked}) исчез перед действием.",
 			CombatEventKind.PlayerTurn => $"Ход героя {Battle.PlayerTurn}: AP восстановлены, новая рука.",
-			CombatEventKind.Victory => "Победа. Можно продолжить исследование.",
-			_ => "Герой погиб. R создаёт нового героя без прежних вещей.",
+			CombatEventKind.Victory => "Победа. ENTER открывает награду.",
+			_ => "Герой погиб. ENTER возвращает на базу; взятые вещи потеряны.",
 		};
 		AppendLog(_animation.View.Round, message);
 	}

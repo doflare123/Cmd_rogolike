@@ -12,8 +12,9 @@ public partial class CombatUiSmokeTest : Node
 	{
 		try
 		{
-			var game = new DungeonGame { WorldSeed = 1701, EnemyRoomChance = 1 };
+			var game = new DungeonGame { WorldSeed = 1701, StartWithDebugPreparation = true, EnemyRoomChance = 1, SettingsPath = "res://.godot/combat-ui-settings-test.cfg" };
 			AddChild(game);
+			game.Settings.SetRewardAnimations(true);
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 			Press(game, Key.Down, Key.Down, Key.Enter); // Ring.
 			Press(game, Key.Up, Key.Enter); // Armor.
@@ -52,6 +53,13 @@ public partial class CombatUiSmokeTest : Node
 			CombatSmokeTest.Check(map.Combat.ActionPoints == 2 && map.Combat.Phase == CombatPhase.PlayerTurn, "Animation accepted overlapping commands.");
 			await Delay(0.14);
 			await Capture("combat-card-play.png");
+			Press(game, Key.F2);
+			float settingsProgress = panel.Animation.Progress;
+			Press(game, Key.Space, Key.Q, Key.I);
+			await Delay(0.15);
+			CombatSmokeTest.Check(panel.Animation.Progress == settingsProgress && map.Combat.ActionPoints == 2,
+				"Settings failed to pause combat or allowed game input.");
+			Press(game, Key.Escape);
 			Press(game, Key.L);
 			float pausedProgress = panel.Animation.Progress;
 			Press(game, Key.Enter, Key.Space, Key.Q, Key.I);
@@ -122,6 +130,28 @@ public partial class CombatUiSmokeTest : Node
 			Press(game, Key.Escape);
 			Press(game, Key.Enter);
 			CombatSmokeTest.Check(map.Combat is null && !game.GetChildren().OfType<CombatPanel>().Any(), "Victory did not close battle UI.");
+			var rewardPanel = game.GetChildren().OfType<RewardPanel>().Single();
+			var rewardCache = rewardPanel.Cache;
+			int bagBeforeReward = map.Player.Inventory.Items.Count;
+			Press(game, Key.Escape);
+			CombatSmokeTest.Check(rewardPanel.Reveal.IsComplete && game.GetChildren().OfType<RewardPanel>().Any(), "Escape closed reward instead of skipping.");
+			Press(game, Key.Enter, Key.Enter);
+			CombatSmokeTest.Check(map.Player.Inventory.Items.Count == bagBeforeReward + 1, "Reward keyboard pickup duplicated/lost item.");
+			Press(game, Key.F);
+			CombatSmokeTest.Check(!game.GetChildren().OfType<RewardPanel>().Any(), "Reward did not return to map.");
+			if (rewardCache.HasRemaining)
+			{
+				Press(game, Key.G);
+				CombatSmokeTest.Check(game.GetChildren().OfType<RewardPanel>().Single().Cache == rewardCache, "Reopening generated new loot.");
+				Press(game, Key.F);
+			}
+			Press(game, Key.F2);
+			CombatSmokeTest.Check(game.GetChildren().OfType<SettingsPanel>().Any(), "Settings menu unavailable.");
+			Press(game, Key.Enter);
+			CombatSmokeTest.Check(!game.Settings.RewardAnimations, "Settings keyboard toggle failed.");
+			await Capture("reward-settings.png");
+			Press(game, Key.Escape);
+			game.Settings.SetRewardAnimations(true);
 			Press(game, Key.R);
 			CombatSmokeTest.Check(game.CurrentMap is null && game.GetChildren().OfType<InventoryPanel>().Single().Visible, "Reset failed after battle.");
 			Press(game, Key.F);

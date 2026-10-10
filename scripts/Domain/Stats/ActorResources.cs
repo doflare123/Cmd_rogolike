@@ -87,4 +87,11 @@ public sealed class ActorResources
 		Health = Math.Min(Health, MaxHealth);
 		Mana = Math.Min(Mana, MaxMana);
 	}
+
+	internal void Restore(int health, int mana)
+	{
+		if (health < 0 || health > MaxHealth || mana < 0 || mana > MaxMana) throw new ArgumentException("Invalid saved resources.");
+		Health = health;
+		Mana = mana;
+	}
 }

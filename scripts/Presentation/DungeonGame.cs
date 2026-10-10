@@ -39,30 +39,64 @@ public partial class DungeonGame : Node2D
 	private PreparationSession _session = null!;
 	private InventoryPanel _inventoryPanel = null!;
 	private CombatPanel? _combatPanel;
+	private RewardPanel? _rewardPanel;
+	private SettingsPanel? _settingsPanel;
+	private GameSettings _settings = null!;
+	internal string SettingsPath { get; set; } = OS.HasFeature("editor") ? "res://.godot/player-settings.cfg" : "user://player-settings.cfg";
+	internal bool StartWithDebugPreparation { get; set; }
+	internal GameSettings Settings => _settings;
 	private double _combatEntrance = -1;
 	internal bool IsEnteringCombat => _combatEntrance >= 0;
-	internal DungeonMap? CurrentMap => _session.Map;
+	internal DungeonMap? CurrentMap => _campaign?.Expedition ?? _session?.Map;
 	private int _requestedSeed;
 	private string _status = string.Empty;
 
 	public override void _Ready()
 	{
-		StartNewWorld(WorldSeed);
+		_settings = new GameSettings(SettingsPath);
+		GetTree().AutoAcceptQuit = false;
+		_saves = new CampaignSaveStore(ProjectSettings.GlobalizePath(SaveDirectory));
+		if (StartWithDebugPreparation) StartNewWorld(WorldSeed); else ShowMainMenu();
 		GetViewport().SizeChanged += QueueRedraw;
 	}
 
 	public override void _UnhandledKeyInput(InputEvent @event)
 	{
+		if (@event is InputEventKey { Keycode: Key.Alt } alt && _inventoryPanel?.Visible == true && _settingsPanel is null && _infoPanel is null)
+		{
+			_inventoryPanel.HandleKey(alt);
+			GetViewport().SetInputAsHandled();
+			return;
+		}
 		if (@event is not InputEventKey { Pressed: true } key)
 		{
 			return;
 		}
+		if (_infoPanel is not null) { _infoPanel.HandleKey(key); GetViewport().SetInputAsHandled(); return; }
+		if (_settingsPanel is not null)
+		{
+			_settingsPanel.HandleKey(key); GetViewport().SetInputAsHandled(); return;
+		}
+		if (key.Keycode == Key.F2 && !key.Echo)
+		{
+			OpenSettings();
+			GetViewport().SetInputAsHandled(); return;
+		}
 
-		if (_inventoryPanel.Visible)
+		if (_bookPanel is not null) { _bookPanel.HandleKey(key); GetViewport().SetInputAsHandled(); return; }
+		if (_menuPanel is not null) { _menuPanel.HandleKey(key); GetViewport().SetInputAsHandled(); return; }
+		if (_storagePanel is not null) { _storagePanel.HandleKey(key); GetViewport().SetInputAsHandled(); return; }
+		if (_inventoryPanel?.Visible == true)
 		{
 			_inventoryPanel.HandleKey(key);
 			GetViewport().SetInputAsHandled();
 			return;
+		}
+		if (_basePanel is not null) { _basePanel.HandleKey(key); GetViewport().SetInputAsHandled(); return; }
+		if (_campaign is not null && key.Keycode == Key.F5 && !key.Echo)
+		{
+			ShowInfo("СОХРАНЕНИЕ", new[] { "Сохранение доступно только на базе.", "Текущая экспедиция не сохраняется." });
+			GetViewport().SetInputAsHandled(); return;
 		}
 		if (IsEnteringCombat && key.Keycode is not Key.R and not Key.Escape)
 		{
@@ -76,28 +110,42 @@ public partial class DungeonGame : Node2D
 			GetViewport().SetInputAsHandled();
 			return;
 		}
-		if (key.Keycode == Key.I && !key.Echo)
+		if (key.Keycode == Key.I && !key.Echo && _inventoryPanel is not null)
 		{
+			_inventoryPanel.ResetDetails();
 			_inventoryPanel.Refresh();
 			_inventoryPanel.Show();
+			_inventoryPanel.HandleKey(new InputEventKey { Keycode = Key.Alt, Pressed = key.AltPressed });
+			if (_rewardPanel is not null) _rewardPanel.ProcessMode = ProcessModeEnum.Disabled;
 			GetViewport().SetInputAsHandled();
 			return;
 		}
 
-		if (key.Keycode == Key.R && !key.Echo)
+		if (key.Keycode == Key.R && !key.Echo && StartWithDebugPreparation)
 		{
 			StartNewWorld(0);
 			GetViewport().SetInputAsHandled();
 			return;
 		}
+		if (_rewardPanel is not null)
+		{
+			_rewardPanel.HandleKey(key); GetViewport().SetInputAsHandled(); return;
+		}
 		if (key.Keycode == Key.Escape)
 		{
-			GetTree().Quit();
+			if (_campaign is not null) RequestLeaveExpedition(false); else RequestQuit();
 			return;
 		}
 		if (_combatPanel is not null)
 		{
+			if (_campaign is not null && _map.Combat?.Phase == CmdRoguelike.Domain.Combat.CombatPhase.Defeat
+				&& !_combatPanel.IsAnimating && !key.Echo && key.Keycode is Key.Enter or Key.F)
+			{
+				_campaign.AcceptDeath(); ShowBase("Герой погиб. Взятые вещи потеряны; запасы базы сохранены."); SaveOnBase();
+				GetViewport().SetInputAsHandled(); return;
+			}
 			_combatPanel.HandleKey(key);
+			SyncCombatMarker();
 			GetViewport().SetInputAsHandled();
 			return;
 		}
@@ -111,6 +159,11 @@ public partial class DungeonGame : Node2D
 
 		switch (key.Keycode)
 		{
+			case Key.G:
+				if (!key.Echo && _map.GetAvailableReward() is RewardCache cache) ShowReward(cache);
+				else _status = "В этой секции нет незабранной добычи.";
+				QueueRedraw();
+				break;
 			case Key.E:
 			case Key.Space:
 				TryOpenAdjacentDoor();
@@ -124,13 +177,13 @@ public partial class DungeonGame : Node2D
 
 	public override void _UnhandledInput(InputEvent @event)
 	{
-		if (!_inventoryPanel.Visible && @event is InputEventMouseButton mouse && _combatPanel?.HandleMouse(mouse) == true)
+		if (_infoPanel is null && _settingsPanel is null && _rewardPanel is null && _inventoryPanel?.Visible != true && @event is InputEventMouseButton mouse && _combatPanel?.HandleMouse(mouse) == true)
 			GetViewport().SetInputAsHandled();
 	}
 
 	public override void _Draw()
 	{
-		if (_session.Map is null) return;
+		if (CurrentMap is null) return;
 		_renderer.Draw(
 			this,
 			_map,
@@ -144,7 +197,8 @@ public partial class DungeonGame : Node2D
 
 	public override void _Process(double delta)
 	{
-		if (!IsEnteringCombat) return;
+		SyncCombatMarker();
+		if (!IsEnteringCombat || _settingsPanel is not null || _infoPanel is not null) return;
 		_combatEntrance += delta;
 		if (_combatEntrance >= 1.15)
 		{
@@ -158,19 +212,45 @@ public partial class DungeonGame : Node2D
 	{
 		_requestedSeed = requestedSeed;
 		_combatEntrance = -1;
+		if (_rewardPanel is not null) { RemoveChild(_rewardPanel); _rewardPanel.QueueFree(); _rewardPanel = null; }
 		if (_combatPanel is not null) { RemoveChild(_combatPanel); _combatPanel.QueueFree(); _combatPanel = null; }
 		_session = new PreparationSession();
 		if (_inventoryPanel is not null) { RemoveChild(_inventoryPanel); _inventoryPanel.QueueFree(); }
-		_inventoryPanel = new InventoryPanel(_session.Hero, EnterExpedition, CloseInventory);
-		_inventoryPanel.Layer = 2;
+		_inventoryPanel = new InventoryPanel(_session.Hero, EnterExpedition, CloseInventory,
+			id => _session.Map is null ? _session.Hero.Inventory.TryUseConsumable(id) : _map.UseConsumable(id));
+		_inventoryPanel.Layer = 3;
 		AddChild(_inventoryPanel);
 		QueueRedraw();
 	}
 
-	private void CloseInventory() => _inventoryPanel.Hide();
+	private void CloseInventory()
+	{
+		_inventoryPanel.ResetDetails();
+		_inventoryPanel.Hide();
+		if (_rewardPanel is not null) _rewardPanel.ProcessMode = ProcessModeEnum.Inherit;
+	}
+	private void CloseSettings()
+	{
+		if (_settingsPanel is not null) { RemoveChild(_settingsPanel); _settingsPanel.QueueFree(); _settingsPanel = null; }
+		if (_combatPanel is not null) _combatPanel.ProcessMode = ProcessModeEnum.Inherit;
+		if (_rewardPanel is not null) _rewardPanel.ProcessMode = _inventoryPanel.Visible ? ProcessModeEnum.Disabled : ProcessModeEnum.Inherit;
+	}
+	private void ShowReward(RewardCache cache)
+	{
+		_campaign?.Observe(cache.Entries.Select(e => e.Item.Roll.Definition));
+		_rewardPanel = new RewardPanel(_map, cache, _settings, () =>
+		{
+			if (_rewardPanel is not null) { RemoveChild(_rewardPanel); _rewardPanel.QueueFree(); _rewardPanel = null; }
+			_map.FinishRewardPresentation();
+			_status = _map.BossDefeated ? "Дуб повержен. Войдите в портал O, чтобы вернуться на базу." : "Исследование продолжается. G открывает оставшуюся добычу в секции.";
+			QueueRedraw();
+		});
+		AddChild(_rewardPanel);
+	}
 
 	private void EnterExpedition()
 	{
+		if (_campaign is not null) { DepartCampaign(); return; }
 		int seed = _requestedSeed != 0
 			? _requestedSeed
 			: Random.Shared.Next(1, int.MaxValue);
@@ -207,11 +287,13 @@ public partial class DungeonGame : Node2D
 		};
 
 		ShowCombatIfNeeded();
+		if (_campaign?.EnterReturnPortal() == true) { ShowBase("Вы вернулись с добычей. Следующая экспедиция будет сложнее."); SaveOnBase(); }
 		QueueRedraw();
 	}
 
 	private void ShowCombatIfNeeded()
 	{
+		SyncCombatMarker();
 		if (_map.Combat is null || _combatPanel is not null || IsEnteringCombat) return;
 		_combatEntrance = 0;
 		_status = $"Вы вошли в комнату. Обнаружены противники: {_map.Combat.Enemies.Count}. Начинается бой...";
@@ -224,6 +306,7 @@ public partial class DungeonGame : Node2D
 		{
 			if (_combatPanel is not null) { RemoveChild(_combatPanel); _combatPanel.QueueFree(); _combatPanel = null; }
 			_status = "Победа. Двери доступны, исследование продолжается.";
+			if (_map.PendingReward is RewardCache reward) ShowReward(reward);
 			QueueRedraw();
 		});
 		AddChild(_combatPanel);

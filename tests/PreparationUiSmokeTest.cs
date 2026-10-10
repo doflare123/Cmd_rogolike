@@ -9,12 +9,17 @@ public partial class PreparationUiSmokeTest : Node
 	{
 		try
 		{
-			var game = new DungeonGame { WorldSeed = 1701 };
+			var game = new DungeonGame { WorldSeed = 1701, StartWithDebugPreparation = true };
 			AddChild(game);
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 			var panel = Descendants(game).OfType<InventoryPanel>().Single();
 			Check(!Descendants(panel).Any(node => node is Button or ScrollContainer), "GUI widgets returned to terminal UI.");
+			Check(!panel.ScreenText.Contains("Базовые бонусы:"), "Sources visible before Alt.");
+			Press(game, Key.Alt);
+			Check(panel.ScreenText.Contains("Базовые бонусы:"), "Game failed to forward Alt press.");
+			game._UnhandledKeyInput(new InputEventKey { Pressed = false, Keycode = Key.Alt });
+			Check(!panel.ScreenText.Contains("Базовые бонусы:"), "Game failed to forward Alt release.");
 			Press(game, Key.Enter);
 			Check(panel.Status.StartsWith("Не выполнены требования"), "Missing requirements feedback.");
 			Press(game, Key.Down, Key.Down, Key.Q);

@@ -18,8 +18,8 @@ public sealed class PlayerCharacter : Actor
 
 	public PlayerCharacter(
 		Vector2I position,
-		IReadOnlyDictionary<AttributeId, int>? baseAttributes = null)
-		: base(position, DefaultName, DefaultMaxHealth, DefaultMaxMana, baseAttributes, BodyPlan.Humanoid)
+		IReadOnlyDictionary<AttributeId, int>? baseAttributes = null, Guid? id = null)
+		: base(position, DefaultName, DefaultMaxHealth, DefaultMaxMana, baseAttributes, BodyPlan.Humanoid, id)
 	{
 	}
 }

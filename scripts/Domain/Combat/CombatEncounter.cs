@@ -1,12 +1,14 @@
 using CmdRoguelike.Domain.Entities;
 using CmdRoguelike.Domain.Stats;
+using CmdRoguelike.Domain.Rewards;
 
 namespace CmdRoguelike.Domain.Combat;
 
 public enum CombatPhase { RoundPreview, PlayerTurn, Victory, Defeat }
 public enum CombatCommandResult { Success, WrongPhase, InvalidCard, InvalidTarget, NotEnoughActionPoints, ReplacementUnavailable, SourceUnavailable }
 public enum CombatEventKind { Attack, Block, PlayerTurn, Victory, Defeat, Charge, BlockExpired }
-public sealed record CombatEvent(CombatEventKind Kind, Guid ActorId, Guid? TargetId, int Damage = 0, int Blocked = 0, string? ActionName = null);
+public sealed record CombatEvent(CombatEventKind Kind, Guid ActorId, Guid? TargetId, int Damage = 0, int Blocked = 0,
+	string? ActionName = null, int Mitigated = 0, DamageAspect Aspect = DamageAspect.Physical);
 public sealed record EnemyIntent(Guid EnemyId, Guid TargetId, int Damage, bool BeforePlayer,
 	EnemyActionKind Action = EnemyActionKind.Attack, int Block = 0, string ActionName = "Атака");
 
@@ -21,6 +23,8 @@ public sealed class CombatEncounter
 	private readonly List<CombatEvent> _events = new();
 	private readonly Dictionary<Guid, int> _enemyBlock = new();
 	private int _nextReplacementTurn = 1;
+	private readonly RewardEnemy[] _rewardEnemies;
+	public CombatVictorySummary? VictorySummary { get; private set; }
 	public PlayerCharacter Player { get; }
 	public IReadOnlyList<Enemy> Enemies => _enemies;
 	public IReadOnlyList<CombatCard> Hand => _deck.Hand;
@@ -50,6 +54,7 @@ public sealed class CombatEncounter
 			|| participants.Select(enemy => enemy.Id).Distinct().Count() != participants.Length)
 			throw new ArgumentException("Combat requires a living player and distinct living enemies.");
 		_enemies = Array.AsReadOnly(participants);
+		_rewardEnemies = participants.Select(enemy => new RewardEnemy(enemy.RewardDifficulty, enemy.Health, enemy.RewardRole)).ToArray();
 		_options = options ?? new CombatOptions();
 		_deck = new CombatDeck(CombatDeckBuilder.Build(player, _options), seed);
 		PrepareRound();
@@ -101,7 +106,7 @@ public sealed class CombatEncounter
 		_deck.Discard(index);
 		if (target is not null)
 		{
-			DealAttack(Player, target, card.Power, card.Name);
+			DealAttack(Player, target, card.Power, card.Name, card.DamageAspect);
 		}
 		else
 		{
@@ -187,15 +192,17 @@ public sealed class CombatEncounter
 	}
 
 	/// <summary>Shared damage/block rules for both sides; actions never bypass protection.</summary>
-	private void DealAttack(Actor attacker, Actor target, int power, string actionName)
+	private void DealAttack(Actor attacker, Actor target, int power, string actionName, DamageAspect aspect = DamageAspect.Physical)
 	{
+		int adjusted = target.DamageProfile.Apply(power, aspect);
 		int block = target == Player ? Block : GetEnemyBlock(target.Id);
-		int blocked = Math.Min(block, power);
+		int blocked = Math.Min(block, adjusted);
 		if (target == Player) Block -= blocked;
 		else _enemyBlock[target.Id] = block - blocked;
-		int damage = Math.Min(target.Health, power - blocked);
-		target.TakeDamage(power - blocked);
-		_events.Add(new CombatEvent(CombatEventKind.Attack, attacker.Id, target.Id, damage, blocked, actionName));
+		int damage = Math.Min(target.Health, adjusted - blocked);
+		target.TakeDamage(adjusted - blocked);
+		_events.Add(new CombatEvent(CombatEventKind.Attack, attacker.Id, target.Id, damage, blocked, actionName,
+			Math.Max(0, power - adjusted), aspect));
 	}
 
 	private bool CheckFinished()
@@ -204,6 +211,9 @@ public sealed class CombatEncounter
 			: _enemies.All(enemy => !enemy.IsAlive) ? CombatPhase.Victory : null;
 		if (finish is null) return false;
 		Phase = finish.Value;
+		if (Phase == CombatPhase.Victory)
+			VictorySummary ??= new CombatVictorySummary(_rewardEnemies, Math.Max(1, PlayerTurn),
+				Player.Health, Player.MaxHealth, Player.Resources.Mana, Player.Resources.MaxMana);
 		ActionPoints = 0;
 		Block = 0;
 		_enemyBlock.Clear();

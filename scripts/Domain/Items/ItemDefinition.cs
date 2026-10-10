@@ -10,6 +10,9 @@ public enum EquipmentSlot
 	RingLeft, RingRight, MainHand, OffHand, Talisman, Backpack,
 }
 
+public enum ItemCategory { Material, Equipment, Weapon, Armor, Shield, Jewelry, Consumable }
+public enum ItemNameGender { Masculine, Feminine, Neuter }
+
 public sealed class BodyPlan
 {
 	public IReadOnlyList<EquipmentSlot> Slots { get; }
@@ -28,6 +31,9 @@ public sealed class ItemDefinition
 {
 	public string Id { get; }
 	public string Name { get; }
+	public ItemCategory Category { get; }
+	public ItemNameGender NameGender { get; }
+	public ItemRestoration? Restoration { get; }
 	public int MaximumStack { get; }
 	public IReadOnlyList<EquipmentSlot> Slots { get; }
 	public IReadOnlyDictionary<AttributeId, int> Requirements { get; }
@@ -40,7 +46,9 @@ public sealed class ItemDefinition
 		IReadOnlyDictionary<AttributeId, int>? requirements = null,
 		IReadOnlyDictionary<AttributeId, int>? attributeBonuses = null,
 		IReadOnlyDictionary<DerivedStatId, int>? statBonuses = null,
-		IEnumerable<EquipmentCardGrant>? combatCards = null)
+		IEnumerable<EquipmentCardGrant>? combatCards = null,
+		ItemCategory? category = null, ItemNameGender nameGender = ItemNameGender.Masculine,
+		ItemRestoration? restoration = null)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(id);
 		ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -49,6 +57,13 @@ public sealed class ItemDefinition
 		Name = name;
 		MaximumStack = maximumStack;
 		Slots = Array.AsReadOnly((slots ?? Array.Empty<EquipmentSlot>()).Distinct().ToArray());
+		Category = category ?? (Slots.Count == 0 ? ItemCategory.Material : ItemCategory.Equipment);
+		NameGender = nameGender;
+		Restoration = restoration;
+		if (!Enum.IsDefined(Category) || !Enum.IsDefined(nameGender)
+			|| (Category is ItemCategory.Material or ItemCategory.Consumable) != (Slots.Count == 0)
+			|| (Category == ItemCategory.Consumable) != (restoration is not null))
+			throw new ArgumentException("Item category must agree with equipment slots.");
 		if (Slots.Any(slot => !Enum.IsDefined(slot)) || (Slots.Count > 0 && maximumStack != 1))
 			throw new ArgumentException("Equipment must be non-stackable and use valid slots.");
 		Requirements = Copy(requirements);

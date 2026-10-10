@@ -10,22 +10,24 @@ public sealed record CombatCard
 	public CombatCardKind Kind { get; }
 	public int ActionPointCost { get; }
 	public int Power { get; }
+	public DamageAspect DamageAspect { get; }
 	public Guid? SourceItemId { get; private init; }
 	public string SourceName { get; private init; } = "Герой";
 	internal CombatCard FromEquipment(Guid itemId, string itemName)
 		=> this with { SourceItemId = itemId, SourceName = itemName };
 
-	public CombatCard(string id, string name, CombatCardKind kind, int actionPointCost, int power)
+	public CombatCard(string id, string name, CombatCardKind kind, int actionPointCost, int power, DamageAspect damageAspect = DamageAspect.Physical)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(id);
 		ArgumentException.ThrowIfNullOrWhiteSpace(name);
-		if (!Enum.IsDefined(kind) || actionPointCost < 0 || power < 0)
+		if (!Enum.IsDefined(kind) || !Enum.IsDefined(damageAspect) || actionPointCost < 0 || power < 0)
 			throw new ArgumentException("Invalid combat card parameters.");
 		Id = id;
 		Name = name;
 		Kind = kind;
 		ActionPointCost = actionPointCost;
 		Power = power;
+		DamageAspect = damageAspect;
 	}
 }
 

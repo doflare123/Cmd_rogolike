@@ -1,6 +1,7 @@
 using CmdRoguelike.Domain.Stats;
 using CmdRoguelike.Domain.Items;
 using Godot;
+using CmdRoguelike.Domain.Combat;
 
 namespace CmdRoguelike.Domain.Entities;
 
@@ -14,6 +15,7 @@ public abstract class Actor : DungeonEntity
 	public DerivedStatSet DerivedStats { get; }
 	public ActorResources Resources { get; }
 	public ActorInventory Inventory { get; }
+	public virtual DamageProfile DamageProfile => DamageProfile.Unprotected;
 	public int MaxHealth => Resources.MaxHealth;
 	public int Health => Resources.Health;
 	public bool IsAlive => Health > 0;
@@ -25,8 +27,8 @@ public abstract class Actor : DungeonEntity
 		int maxHealth,
 		int maxMana = 0,
 		IReadOnlyDictionary<AttributeId, int>? baseAttributes = null,
-		BodyPlan? body = null)
-		: base(position)
+		BodyPlan? body = null, Guid? id = null)
+		: base(position, id)
 	{
 		if (string.IsNullOrWhiteSpace(name))
 		{

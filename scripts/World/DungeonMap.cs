@@ -2,6 +2,8 @@ using CmdRoguelike.Core;
 using CmdRoguelike.Domain;
 using CmdRoguelike.Domain.Entities;
 using CmdRoguelike.Domain.Combat;
+using CmdRoguelike.Domain.Items;
+using CmdRoguelike.Domain.Rewards;
 using CmdRoguelike.Generation;
 using CmdRoguelike.State;
 using Godot;
@@ -23,6 +25,17 @@ public sealed class DungeonMap
 	private readonly DungeonKnowledge _knowledge = new();
 	private readonly CombatOptions _combatOptions;
 	private int _encounterNumber;
+	private readonly List<RewardCache> _rewardCaches = new();
+	private CombatEncounter? _rewardedBattle;
+	private readonly CombatRewardOptions _rewardOptions;
+	private readonly BossPlacementPolicy? _bossPlacement;
+	private readonly ExpeditionOptions? _expeditionOptions;
+	private bool _bossPlaced;
+	public Vector2I? ReturnPortal { get; private set; }
+	public bool BossDefeated => ReturnPortal is not null;
+	public bool CanUseReturnPortal => !IsInCombat && Player.IsAlive && ReturnPortal == Player.Position;
+	public bool IsReturnPortalVisible => ReturnPortal is Vector2I p && IsRevealed(p);
+	public RewardCache? PendingReward { get; private set; }
 	public CombatEncounter? Combat { get; private set; }
 	public bool IsInCombat => Combat is not null;
 
@@ -40,14 +53,19 @@ public sealed class DungeonMap
 	{
 	}
 
-	public DungeonMap(int seed, DungeonGenerationOptions options, PlayerCharacter? preparedHero = null, CombatOptions? combatOptions = null)
+	public DungeonMap(int seed, DungeonGenerationOptions options, PlayerCharacter? preparedHero = null, CombatOptions? combatOptions = null,
+		CombatRewardOptions? rewardOptions = null, ExpeditionOptions? expeditionOptions = null)
 	{
 		ArgumentNullException.ThrowIfNull(options);
 		if (preparedHero is not null && (preparedHero.Inventory.IsLocked || !preparedHero.IsAlive))
 			throw new InvalidOperationException("Hero is unavailable for a new expedition.");
 
 		Seed = seed;
+		_expeditionOptions = expeditionOptions;
+		if (expeditionOptions is not null) _bossPlacement = new(new GodotRandomSource(unchecked(seed * 7919 ^ 0x32ce17)),
+			expeditionOptions.MinimumBossRooms, expeditionOptions.GuaranteedBossRoom);
 		_combatOptions = combatOptions ?? new CombatOptions();
+		_rewardOptions = rewardOptions ?? new CombatRewardOptions();
 		IRandomSource random = new GodotRandomSource(seed);
 		_regionGenerator = new RegionGenerator(options, random, _grid, _doors);
 		_enemyGenerator = new EnemyGenerator(
@@ -189,25 +207,66 @@ public sealed class DungeonMap
 	}
 
 	public CombatCommandResult BeginCombatRound()
-		=> Combat?.BeginRound() ?? CombatCommandResult.WrongPhase;
+		=> ApplyCombatCommand(battle => battle.BeginRound());
 	public CombatCommandResult EndCombatTurn()
-		=> Combat?.EndPlayerTurn() ?? CombatCommandResult.WrongPhase;
+		=> ApplyCombatCommand(battle => battle.EndPlayerTurn());
 	public CombatCommandResult ReplaceCombatCard(int index)
 		=> Combat?.ReplaceCard(index) ?? CombatCommandResult.WrongPhase;
 	public CombatCommandResult PlayCombatCard(int index, Guid? targetId = null)
+		=> ApplyCombatCommand(battle => battle.PlayCard(index, targetId));
+
+	private CombatCommandResult ApplyCombatCommand(Func<CombatEncounter, CombatCommandResult> command)
 	{
-		CombatCommandResult result = Combat?.PlayCard(index, targetId) ?? CombatCommandResult.WrongPhase;
+		CombatCommandResult result = Combat is null ? CombatCommandResult.WrongPhase : command(Combat);
 		if (Combat is not null && result == CombatCommandResult.Success)
+		{
 			foreach (Enemy enemy in Combat.Enemies.Where(enemy => !enemy.IsAlive))
 				if (ReferenceEquals(GetEntityAt(enemy.Position), enemy)) _entities.Remove(enemy);
+			if (Combat.VictorySummary is not null && !ReferenceEquals(_rewardedBattle, Combat))
+			{
+				Enemy? boss = Combat.Enemies.FirstOrDefault(e => e.IsBoss);
+				if (boss is not null) ReturnPortal = boss.Position;
+				int seed = unchecked(Seed * 15485863 ^ _encounterNumber * 32452843 ^ 0x5ac712);
+				var reward = new CombatRewardGenerator(new GodotRandomSource(seed), _rewardOptions).Generate(Combat.VictorySummary);
+				PendingReward = new RewardCache(Player.Position, reward);
+				_rewardCaches.Add(PendingReward);
+				_rewardedBattle = Combat;
+			}
+		}
 		return result;
 	}
+
+	public RewardCache? GetAvailableReward() => IsInCombat || !Player.IsAlive ? null
+		: _rewardCaches.FirstOrDefault(cache => cache.HasRemaining && _knowledge.IsInCurrentSection(cache.Position));
+	public RewardCache? GetVisibleRewardAt(Vector2I position) => IsRevealed(position)
+		? _rewardCaches.FirstOrDefault(cache => cache.Position == position && cache.HasRemaining) : null;
+	public RewardClaimResult TryClaimReward(Guid cacheId, Guid entryId)
+	{
+		var cache = _rewardCaches.FirstOrDefault(c => c.Id == cacheId);
+		if (IsInCombat || !Player.IsAlive || cache is null || !cache.IsRevealed || !_knowledge.IsInCurrentSection(cache.Position))
+			return RewardClaimResult.Unavailable;
+		return cache.Entries.FirstOrDefault(e => e.Id == entryId)?.Claim(Player.Inventory) ?? RewardClaimResult.Unavailable;
+	}
+	public void RevealReward(Guid cacheId)
+	{
+		if (!IsInCombat && Player.IsAlive)
+			_rewardCaches.FirstOrDefault(c => c.Id == cacheId && _knowledge.IsInCurrentSection(c.Position))?.Reveal();
+	}
+	public void FinishRewardPresentation() => PendingReward = null;
+	public ConsumableUseResult UseConsumable(Guid id) => IsInCombat || !Player.IsAlive
+		? ConsumableUseResult.Unavailable : Player.Inventory.TryUseConsumable(id);
 
 	public bool LeaveVictoriousCombat()
 	{
 		if (Combat?.Phase != CombatPhase.Victory) return false;
 		Combat = null;
 		return true;
+	}
+
+	internal void ReleasePlayer()
+	{
+		if (!CanUseReturnPortal) throw new InvalidOperationException("Return requires entering a victorious portal.");
+		_entities.Remove(Player);
 	}
 
 	public IReadOnlyCollection<DungeonEntity> GetEntities()
@@ -306,7 +365,7 @@ public sealed class DungeonMap
 
 		if (createdRegion)
 		{
-			int spawnedEnemies = _enemyGenerator.Populate(targetRegion!, isSafeRegion: false);
+			int spawnedEnemies = TryPlaceBoss(targetRegion!) ? 1 : _enemyGenerator.Populate(targetRegion!, isSafeRegion: false);
 			if (spawnedEnemies > 0)
 			{
 				PopulatedRoomCount++;
@@ -317,5 +376,15 @@ public sealed class DungeonMap
 
 		_knowledge.Enter(Player.Position, GetTile, refresh: true);
 		return new DoorExpansion(createdRegion, false, targetRegion!.Kind);
+	}
+
+	private bool TryPlaceBoss(DungeonRegion region)
+	{
+		if (_bossPlaced || _bossPlacement is null || region.Kind != DungeonRegionKind.Room || !_bossPlacement.ShouldPlace(RoomCount)) return false;
+		Vector2I[] candidates = region.Floors.Where(p => GetTile(p) == DungeonTile.Floor && !_entities.IsOccupied(p))
+			.OrderBy(p => p.DistanceSquaredTo(region.Anchor)).ThenBy(p => p.Y).ThenBy(p => p.X).ToArray();
+		if (candidates.Length == 0) return false;
+		_entities.Add(new WiseOakEnemy(candidates[0], _expeditionOptions!.WorldTier));
+		_bossPlaced = true; return true;
 	}
 }

@@ -27,14 +27,62 @@ public sealed class ActorInventory
 	}
 
 	public void LockForExpedition() => IsLocked = true;
+	internal void UnlockOnBase() => IsLocked = false;
+
+	internal InventoryResult Store(Guid id, ItemStorage storage)
+	{
+		if (IsLocked || !_actor.IsAlive) return InventoryResult.Locked;
+		var item = _items.Find(i => i.Id == id && i.Location == ItemLocation.Backpack);
+		if (item is null) return InventoryResult.NotFound;
+		if (storage.Items.Count >= storage.Capacity) return InventoryResult.Full;
+		_items.Remove(item);
+		item.OwnerId = storage.Id;
+		item.Location = ItemLocation.Storage;
+		storage.Attach(item);
+		return InventoryResult.Success;
+	}
+
+	internal InventoryResult Withdraw(Guid id, ItemStorage storage)
+	{
+		if (IsLocked || !_actor.IsAlive) return InventoryResult.Locked;
+		var item = storage.Items.FirstOrDefault(i => i.Id == id);
+		if (item is null) return InventoryResult.NotFound;
+		if (UsedSlots >= Capacity) return InventoryResult.Full;
+		storage.Detach(item);
+		item.OwnerId = _actor.Id;
+		item.Location = ItemLocation.Backpack;
+		_items.Add(item);
+		return InventoryResult.Success;
+	}
+
+	internal void RestoreItems(IEnumerable<ItemInstance> items)
+	{
+		var restored = items.ToArray();
+		if (_items.Count != 0 || restored.Any(i => i.OwnerId != _actor.Id || i.Location == ItemLocation.Storage)
+			|| restored.Select(i => i.Id).Distinct().Count() != restored.Length
+			|| restored.Count(i => i.Location == ItemLocation.Backpack) > Capacity
+			|| restored.Where(i => i.Location == ItemLocation.Equipment).Any(i => i.Quantity != 1 || i.Slot is null
+				|| !Body.Slots.Contains(i.Slot.Value) || !i.Definition.Slots.Contains(i.Slot.Value))
+			|| restored.Where(i => i.Location == ItemLocation.Equipment).Select(i => i.Slot).Distinct().Count()
+				!= restored.Count(i => i.Location == ItemLocation.Equipment)
+			|| restored.Any(i => i.Location == ItemLocation.Backpack && i.Slot is not null))
+			throw new ArgumentException("Invalid restored inventory.");
+		_items.AddRange(restored);
+		Recalculate();
+	}
 
 	/// <summary>Adds newly acquired loot; failure never partially fills existing stacks.</summary>
 	public InventoryResult TryAcquire(ItemDefinition definition, int quantity = 1)
+		=> TryAcquireRolled(new ItemRoll(definition), quantity);
+
+	public InventoryResult TryAcquireRolled(ItemRoll roll, int quantity = 1)
 	{
-		ArgumentNullException.ThrowIfNull(definition);
+		ArgumentNullException.ThrowIfNull(roll);
+		var definition = roll.Definition;
 		if (quantity <= 0) throw new ArgumentOutOfRangeException(nameof(quantity));
 		var stacks = _items.Where(item => item.Location == ItemLocation.Backpack
-			&& ReferenceEquals(item.Definition, definition)).ToArray();
+			&& ReferenceEquals(item.Definition, definition) && item.Rarity == roll.Rarity
+			&& item.ItemLevel == roll.ItemLevel && item.Affixes.SequenceEqual(roll.Affixes)).ToArray();
 		long room = stacks.Sum(item => (long)definition.MaximumStack - item.Quantity);
 		long remainder = Math.Max(0, quantity - room);
 		long needed = (remainder + definition.MaximumStack - 1) / definition.MaximumStack;
@@ -48,7 +96,7 @@ public sealed class ActorInventory
 		while (quantity > 0)
 		{
 			int added = Math.Min(quantity, definition.MaximumStack);
-			_items.Add(new ItemInstance(_actor.Id, definition, added));
+			_items.Add(new ItemInstance(_actor.Id, roll, added));
 			quantity -= added;
 		}
 		return InventoryResult.Success;
@@ -74,6 +122,22 @@ public sealed class ActorInventory
 			throw;
 		}
 		return InventoryResult.Success;
+	}
+
+	public ConsumableUseResult TryUseConsumable(Guid id)
+	{
+		if (!_actor.IsAlive) return ConsumableUseResult.Unavailable;
+		var item = _items.Find(i => i.Id == id && i.Location == ItemLocation.Backpack);
+		if (item is null) return ConsumableUseResult.NotFound;
+		if (item.Definition.Restoration is not ItemRestoration effect) return ConsumableUseResult.NotConsumable;
+		int maximum = effect.Resource == RestorationResource.Health ? _actor.Resources.MaxHealth : _actor.Resources.MaxMana;
+		int current = effect.Resource == RestorationResource.Health ? _actor.Resources.Health : _actor.Resources.Mana;
+		if (current >= maximum) return ConsumableUseResult.NoNeed;
+		int amount = (int)(((long)maximum * effect.Percent + 99) / 100);
+		if (effect.Resource == RestorationResource.Health) _actor.RestoreHealth(amount);
+		else _actor.Resources.RestoreMana(amount);
+		if (item.Quantity == 1) _items.Remove(item); else item.Quantity--;
+		return ConsumableUseResult.Success;
 	}
 
 	public InventoryResult TryUnequip(Guid id)
@@ -106,8 +170,8 @@ public sealed class ActorInventory
 			AttributeModifiers(active, requirement.Key)) >= requirement.Value);
 
 	private static IEnumerable<StatModifier> AttributeModifiers(IEnumerable<ItemInstance> active, AttributeId stat) =>
-		active.Where(item => item.Definition.AttributeBonuses.ContainsKey(stat))
-		.Select(item => new StatModifier($"item:{item.Id}", StatModifierOperation.Flat, item.Definition.AttributeBonuses[stat]));
+		active.Where(item => item.AttributeBonuses.ContainsKey(stat))
+		.Select(item => new StatModifier($"item:{item.Id}", StatModifierOperation.Flat, item.AttributeBonuses[stat]));
 
 	private void Recalculate()
 	{
@@ -134,8 +198,8 @@ public sealed class ActorInventory
 			var attributes = Enum.GetValues<AttributeId>().ToDictionary(stat => stat,
 				stat => AttributeModifiers(active, stat).ToList());
 			var stats = Enum.GetValues<DerivedStatId>().ToDictionary(stat => stat,
-				stat => active.Where(item => item.Definition.StatBonuses.ContainsKey(stat))
-				.Select(item => new StatModifier($"item:{item.Id}", StatModifierOperation.Flat, item.Definition.StatBonuses[stat])).ToList());
+				stat => active.Where(item => item.StatBonuses.ContainsKey(stat))
+				.Select(item => new StatModifier($"item:{item.Id}", StatModifierOperation.Flat, item.StatBonuses[stat])).ToList());
 			// Validate both collections before publishing any state or clamping resources.
 			foreach (var pair in attributes) _ = _actor.Attributes.PreviewEquipment(pair.Key, pair.Value);
 			foreach (var pair in stats) _ = _actor.DerivedStats.PreviewEquipment(pair.Key, pair.Value);

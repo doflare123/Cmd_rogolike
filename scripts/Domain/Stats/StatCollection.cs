@@ -30,6 +30,28 @@ public class StatCollection<TStat> where TStat : struct, Enum
 		return _permanentGrowth.GetValueOrDefault(stat);
 	}
 
+	internal StatSnapshot<TStat>[] Snapshot() => Enum.GetValues<TStat>().Select(stat => new StatSnapshot<TStat>(
+		stat, GetBaseValue(stat), GetPermanentGrowth(stat),
+		(_modifiers.GetValueOrDefault(stat) ?? new()).ToArray())).ToArray();
+
+	internal void Restore(IEnumerable<StatSnapshot<TStat>> values)
+	{
+		var states = values.ToArray();
+		if (states.Length != Enum.GetValues<TStat>().Length || states.Select(s => s.Id).Distinct().Count() != states.Length
+			|| states.Any(s => !Enum.IsDefined(s.Id) || s.Growth < 0 || s.Modifiers is null
+				|| s.Modifiers.Any(m => m is null || !Enum.IsDefined(m.Operation))))
+			throw new ArgumentException("Invalid saved stats.");
+		foreach (var state in states)
+		{
+			_baseValues[state.Id] = state.Base;
+			_permanentGrowth[state.Id] = state.Growth;
+			_modifiers[state.Id] = state.Modifiers.ToList();
+			if (_modifiers[state.Id].Count(m => m.Operation == StatModifierOperation.Override) > 1)
+				throw new ArgumentException("Duplicate stat override.");
+			_ = GetValue(state.Id);
+		}
+	}
+
 	public int GetValue(TStat stat)
 		=> Calculate(stat, _equipment.GetValueOrDefault(stat) ?? new());
 

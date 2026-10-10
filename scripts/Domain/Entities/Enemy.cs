@@ -1,5 +1,6 @@
 using Godot;
 using CmdRoguelike.Domain.Combat;
+using CmdRoguelike.Domain.Rewards;
 
 namespace CmdRoguelike.Domain.Entities;
 
@@ -9,7 +10,10 @@ namespace CmdRoguelike.Domain.Entities;
 public abstract class Enemy : Actor
 {
 	public int AttackPower { get; }
+	public virtual bool IsBoss => false;
 	public virtual IEnemyBehavior Behavior => EnemyBehaviors.Attacker;
+	public virtual EnemyRewardRole RewardRole => EnemyRewardRole.Attacker;
+	public virtual int RewardDifficulty => checked(MaxHealth + AttackPower * 2);
 
 	protected Enemy(
 		Vector2I position,
