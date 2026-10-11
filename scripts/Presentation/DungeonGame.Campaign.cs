@@ -14,6 +14,7 @@ public partial class DungeonGame
 	private StoragePanel? _storagePanel;
 	private EncyclopediaPanel? _bookPanel;
 	private InfoPanel? _infoPanel;
+	private DevelopmentPanel? _developmentPanel;
 	private bool _combatMarked;
 	internal CampaignSession? CurrentCampaign => _campaign;
 	internal string SaveDirectory { get; set; } = OS.HasFeature("editor") ? "res://.godot/campaigns" : "user://campaigns";
@@ -28,6 +29,7 @@ public partial class DungeonGame
 		_combatEntrance = -1;
 		RemovePanel(ref _combatPanel); RemovePanel(ref _rewardPanel); RemovePanel(ref _basePanel);
 		RemovePanel(ref _storagePanel); RemovePanel(ref _bookPanel); RemovePanel(ref _infoPanel);
+		RemovePanel(ref _developmentPanel);
 		if (_inventoryPanel is not null) { RemoveChild(_inventoryPanel); _inventoryPanel.QueueFree(); _inventoryPanel = null!; }
 	}
 	private void ShowMainMenu()
@@ -78,8 +80,14 @@ public partial class DungeonGame
 		_basePanel = new BasePanel(campaign, OpenInventory, OpenStorage, DepartCampaign, () => SaveOnBase(), () =>
 		{
 			if (SaveOnBase()) ShowMainMenu();
-		});
+		}, OpenDevelopment);
 		AddChild(_basePanel); _basePanel.SetStatus(message); QueueRedraw();
+	}
+	private void OpenDevelopment()
+	{
+		if (_campaign?.IsOnBase != true) return;
+		_developmentPanel = new DevelopmentPanel(_campaign, () => RemovePanel(ref _developmentPanel), SaveOnBase);
+		AddChild(_developmentPanel);
 	}
 	private bool SaveOnBase()
 	{

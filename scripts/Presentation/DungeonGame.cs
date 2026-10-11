@@ -84,6 +84,7 @@ public partial class DungeonGame : Node2D
 		}
 
 		if (_bookPanel is not null) { _bookPanel.HandleKey(key); GetViewport().SetInputAsHandled(); return; }
+		if (_developmentPanel is not null) { _developmentPanel.HandleKey(key); GetViewport().SetInputAsHandled(); return; }
 		if (_menuPanel is not null) { _menuPanel.HandleKey(key); GetViewport().SetInputAsHandled(); return; }
 		if (_storagePanel is not null) { _storagePanel.HandleKey(key); GetViewport().SetInputAsHandled(); return; }
 		if (_inventoryPanel?.Visible == true)

@@ -4,6 +4,7 @@ using CmdRoguelike.Domain.Combat;
 using CmdRoguelike.Domain.Entities;
 using CmdRoguelike.Domain.Items;
 using CmdRoguelike.Domain.Stats;
+using CmdRoguelike.Domain.Progression;
 using CmdRoguelike.Generation;
 using CmdRoguelike.Presentation;
 using CmdRoguelike.World;
@@ -177,6 +178,12 @@ public partial class CampaignSmokeTest : Node
 		var campaign = new CampaignSession(2); FireBuild(campaign);
 		Guid heroId = campaign.Hero.Id; var ids = campaign.Hero.Inventory.Items.Select(i => i.Id).ToArray();
 		var map = ExploreBoss(campaign); Win(map);
+		long experience = campaign.Hero.Progression.Experience;
+		Check(experience > 0 && map.PendingReward!.Experience.Amount == experience && campaign.Hero.Progression.Level > 1,
+			"Boss victory failed to award XP/level.");
+		map.BeginCombatRound(); map.EndCombatTurn();
+		Check(campaign.Hero.Progression.Experience == experience && campaign.UnlockedDevelopment.Count == 6,
+			"Repeated victory awarded XP again or unlocked tree before return.");
 		Check(map.ReturnPortal is not null && !campaign.EnterReturnPortal(), "Victory auto-extracted or no portal.");
 		map.LeaveVictoriousCombat(); map.RevealReward(map.PendingReward!.Id);
 		var loot = map.PendingReward.Entries[0]; Check(map.TryClaimReward(map.PendingReward.Id, loot.Id) == RewardClaimResult.Success, "No boss loot.");
@@ -189,13 +196,18 @@ public partial class CampaignSmokeTest : Node
 			&& ids.All(id => campaign.Hero.Inventory.Items.Any(i => i.Id == id)) && campaign.Hero.Inventory.Items.Any(i => i.Id == lootId)
 			&& map.GetEntities().All(e => e.Id != heroId), "Portal return lost identity/loot, healed, or kept a stale registry.");
 		Check(campaign.Store(lootId) == InventoryResult.Success, "Cannot use returned loot on base.");
+		Check(campaign.UnlockedDevelopment.Count == 9 && campaign.LearnDevelopment("vitality") == DevelopmentResult.Success,
+			"Return failed to unlock campaign tree/develop hero.");
 		var store = new CampaignSaveStore(ProjectSettings.GlobalizePath(_directory)); store.Save(campaign);
 		campaign.Rest(); var second = campaign.StartExpedition(11, new DungeonGenerationOptions(enemyRoomChance: 1, roomChance: 1));
 		Check(second.Player.Id == heroId, "Next expedition replaced the hero.");
 		ExpeditionTestDriver.FindCombat(second); second.Player.TakeDamage(999); second.BeginCombatRound();
 		Check(campaign.AcceptDeath() && campaign.Hero.Id != heroId && campaign.WorldTier == 0 && campaign.Storage.Items.Any(i => i.Id == lootId), "Death did not preserve base storage/reset hero.");
+		Check(campaign.Hero.Progression.Experience == 0 && campaign.Hero.Progression.LearnedNodes.Count == 0 && campaign.UnlockedDevelopment.Count == 9,
+			"Death failed to reset personal XP or preserve profile unlocks.");
 		store.Save(campaign);
 		Check(store.Load(2).Storage.Items.Any(i => i.Id == lootId), "Base loot did not survive death save.");
+		Check(store.Load(2).UnlockedDevelopment.Count == 9, "Saved profile lost unlocked tree after death.");
 	}
 	internal static List<CardinalDirection> PathTo(DungeonMap map, Vector2I target)
 	{

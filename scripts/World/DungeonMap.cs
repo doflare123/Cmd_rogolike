@@ -228,7 +228,8 @@ public sealed class DungeonMap
 				if (boss is not null) ReturnPortal = boss.Position;
 				int seed = unchecked(Seed * 15485863 ^ _encounterNumber * 32452843 ^ 0x5ac712);
 				var reward = new CombatRewardGenerator(new GodotRandomSource(seed), _rewardOptions).Generate(Combat.VictorySummary);
-				PendingReward = new RewardCache(Player.Position, reward);
+				var experience = _expeditionOptions is null ? null : Player.Progression.AwardVictory(Combat.VictorySummary);
+				PendingReward = new RewardCache(Player.Position, reward, experience);
 				_rewardCaches.Add(PendingReward);
 				_rewardedBattle = Combat;
 			}

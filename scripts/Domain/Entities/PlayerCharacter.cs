@@ -1,5 +1,6 @@
 using CmdRoguelike.Domain.Stats;
 using CmdRoguelike.Domain.Items;
+using CmdRoguelike.Domain.Progression;
 using Godot;
 
 namespace CmdRoguelike.Domain.Entities;
@@ -15,11 +16,13 @@ public sealed class PlayerCharacter : Actor
 	public const int DefaultMaxMana = 0;
 	// Placeholder only: race has no rules or bonuses in this iteration.
 	public string? Race => null;
+	public HeroProgression Progression { get; }
 
 	public PlayerCharacter(
 		Vector2I position,
 		IReadOnlyDictionary<AttributeId, int>? baseAttributes = null, Guid? id = null)
 		: base(position, DefaultName, DefaultMaxHealth, DefaultMaxMana, baseAttributes, BodyPlan.Humanoid, id)
 	{
+		Progression = new(this);
 	}
 }

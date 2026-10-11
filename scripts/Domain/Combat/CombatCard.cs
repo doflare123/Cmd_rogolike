@@ -15,6 +15,7 @@ public sealed record CombatCard
 	public string SourceName { get; private init; } = "Герой";
 	internal CombatCard FromEquipment(Guid itemId, string itemName)
 		=> this with { SourceItemId = itemId, SourceName = itemName };
+	internal CombatCard FromDevelopment(string nodeName) => this with { SourceName = "Развитие: " + nodeName };
 
 	public CombatCard(string id, string name, CombatCardKind kind, int actionPointCost, int power, DamageAspect damageAspect = DamageAspect.Physical)
 	{

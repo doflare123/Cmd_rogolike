@@ -2,6 +2,7 @@ using CmdRoguelike.Domain.Campaign;
 using CmdRoguelike.Domain.Entities;
 using CmdRoguelike.Domain.Items;
 using CmdRoguelike.Generation;
+using CmdRoguelike.Domain.Progression;
 using Godot;
 
 namespace CmdRoguelike.World;
@@ -19,6 +20,10 @@ public sealed class CampaignSession
 	public int WorldTier { get; private set; }
 	public int OakVictories { get; private set; }
 	public int FallenHeroes { get; private set; }
+	private readonly HashSet<string> _unlockedDevelopment = new(DevelopmentTree.Unlocks(false), StringComparer.Ordinal);
+	public IReadOnlyCollection<string> UnlockedDevelopment => _unlockedDevelopment.Order(StringComparer.Ordinal).ToArray();
+	public DevelopmentResult LearnDevelopment(string id) => IsOnBase
+		? Hero.Progression.Learn(id, UnlockedDevelopment) : DevelopmentResult.Locked;
 	private readonly HashSet<string> _knownItems = new(StringComparer.Ordinal);
 	public IReadOnlyCollection<string> KnownItems => _knownItems.Order(StringComparer.Ordinal).ToArray();
 	public bool IsOnBase => Base is not null && Expedition is null;
@@ -32,11 +37,12 @@ public sealed class CampaignSession
 		Observe(Hero.Inventory.Items.Select(i => i.Definition).Concat(Storage.Items.Select(i => i.Definition)));
 	}
 	internal CampaignSession(int slot, BaseLayout layout, ItemStorage storage, PlayerCharacter hero,
-		Vector2I position, int tier, int victories, int deaths, IEnumerable<string> known)
+		Vector2I position, int tier, int victories, int deaths, IEnumerable<string> known, IEnumerable<string>? unlockedDevelopment = null)
 	{
 		if (slot is < 1 or > 3 || tier is < 0 or > 1000 || victories < 0 || deaths < 0) throw new ArgumentException("Invalid campaign progress.");
 		Slot = slot; Layout = layout; Storage = storage; Hero = hero;
 		WorldTier = tier; OakVictories = victories; FallenHeroes = deaths;
+		if (unlockedDevelopment is not null) { _unlockedDevelopment.Clear(); _unlockedDevelopment.UnionWith(unlockedDevelopment); }
 		Observe(known.Select(ContentCatalog.Find)); Base = new(layout, hero, position);
 	}
 	private static PlayerCharacter CreateHero()
@@ -78,6 +84,7 @@ public sealed class CampaignSession
 		if (Expedition is null || !Expedition.CanUseReturnPortal) return false;
 		Expedition.ReleasePlayer(); Expedition = null; Hero.Inventory.UnlockOnBase();
 		WorldTier = Math.Min(1000, WorldTier + 1); OakVictories++;
+		_unlockedDevelopment.UnionWith(DevelopmentTree.Unlocks(true));
 		Base = new(Layout, Hero); Observe(Hero.Inventory.Items.Select(i => i.Definition)); return true;
 	}
 	public bool AcceptDeath(bool abandon = false)

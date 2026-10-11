@@ -8,16 +8,16 @@ namespace CmdRoguelike.Presentation;
 internal sealed partial class BasePanel : TerminalOverlay
 {
 	private readonly CampaignSession _campaign;
-	private readonly Action _inventory, _storage, _depart, _save, _menu;
+	private readonly Action _inventory, _storage, _depart, _save, _menu, _development;
 	private bool _building;
 	private Vector2I _cursor;
 	private Guid? _moving;
 	private int _kind;
 	private static readonly BaseObjectKind[] BuildKinds = { BaseObjectKind.Storage, BaseObjectKind.Campfire, BaseObjectKind.Workbench, BaseObjectKind.Healer };
 	internal string Status { get; private set; } = "Перед походом подготовьте экипировку. Огненный факел и зелья лежат в хранилище.";
-	public BasePanel(CampaignSession campaign, Action inventory, Action storage, Action depart, Action save, Action menu)
+	public BasePanel(CampaignSession campaign, Action inventory, Action storage, Action depart, Action save, Action menu, Action development)
 	{
-		_campaign = campaign; _inventory = inventory; _storage = storage; _depart = depart; _save = save; _menu = menu; Layer = 1;
+		_campaign = campaign; _inventory = inventory; _storage = storage; _depart = depart; _save = save; _menu = menu; _development = development; Layer = 1;
 	}
 	internal void SetStatus(string status) { Status = status; Refresh(); }
 	public void HandleKey(InputEventKey key)
@@ -49,6 +49,7 @@ internal sealed partial class BasePanel : TerminalOverlay
 		{
 			case Key.I: case Key.F: _inventory(); break;
 			case Key.C: _storage(); break;
+			case Key.P: _development(); break;
 			case Key.F5: _save(); break;
 			case Key.Escape: _menu(); break;
 			case Key.B: _building = true; _cursor = _campaign.Hero.Position; _moving = null; Status = "TAB выбирает объект; ENTER на существующем объекте начинает перенос."; break;
@@ -73,6 +74,9 @@ internal sealed partial class BasePanel : TerminalOverlay
 		var lines = new List<Line>();
 		Put(lines, 3, 1, $"CMD ROGUELIKE / {_campaign.Name.ToUpperInvariant()} / БАЗА", Accent);
 		Put(lines, 3, 3, $"@ {_campaign.Hero.Name}  HP {_campaign.Hero.Health}/{_campaign.Hero.MaxHealth}  Ступень {_campaign.WorldTier}  Побед над дубом {_campaign.OakVictories}", Ink);
+		var development = _campaign.Hero.Progression;
+		string experience = development.ExperienceToNextLevel == 0 ? "предел уровня" : $"опыт {development.ExperienceInLevel}/{development.ExperienceToNextLevel}";
+		Put(lines, 3, 4, $"Уровень {development.Level} | {experience} | Очки {development.AvailablePoints} | [P] развитие", Accent);
 		const int ox = 3, oy = 6;
 		for (int y = 0; y < BaseLayout.Height; y++)
 		{
@@ -96,7 +100,7 @@ internal sealed partial class BasePanel : TerminalOverlay
 		Put(lines, 3, 35, "Сохранение доступно на базе. Перед походом и после возврата создаётся контрольная точка.", Muted);
 		Put(lines, 3, 37, Status, Gold, 106);
 		Put(lines, 3, 40, _building ? "[WASD] курсор  [TAB] объект  [ENTER] поставить / перенести  [DEL] убрать  [B/ESC] завершить"
-			: "[WASD] ход  [E] действие  [I/F] экипировка  [C] запасы  [B] расстановка  [F5] сохранить  [ESC] меню", Accent, 106);
+			: "[WASD] ход  [E] действие  [I/F] вещи  [C] запасы  [P] развитие  [B] стройка  [F5] сохранить  [ESC] меню", Accent, 106);
 		return lines;
 	}
 	internal static string Glyph(BaseObjectKind kind) => kind switch { BaseObjectKind.Storage => "C", BaseObjectKind.Campfire => "^", BaseObjectKind.ExpeditionGate => "O", BaseObjectKind.Workbench => "T", _ => "h" };

@@ -1,5 +1,6 @@
 using CmdRoguelike.Domain.Items;
 using CmdRoguelike.Domain.Rewards;
+using CmdRoguelike.Domain.Progression;
 using Godot;
 
 namespace CmdRoguelike.World;
@@ -27,12 +28,14 @@ public sealed class RewardCache
 	public Guid Id { get; } = Guid.NewGuid();
 	public Vector2I Position { get; }
 	public CombatReward Reward { get; }
+	public ExperienceGain Experience { get; }
 	public IReadOnlyList<RewardEntry> Entries { get; }
 	public bool HasRemaining => Entries.Any(e => !e.IsClaimed);
 	public bool IsRevealed { get; private set; }
-	internal RewardCache(Vector2I position, CombatReward reward)
+	internal RewardCache(Vector2I position, CombatReward reward, ExperienceGain? experience = null)
 	{
 		Position = position; Reward = reward;
+		Experience = experience ?? new(0, 0);
 		Entries = Array.AsReadOnly(reward.Items.Select(i => new RewardEntry(i)).ToArray());
 	}
 	internal void Reveal() => IsRevealed = true;

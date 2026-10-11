@@ -82,6 +82,8 @@ internal sealed partial class RewardPanel : TerminalOverlay
 		Write(4, 7, budget.SupportPercent == 0 ? "Ресурсы в порядке: весь бюджет награды идёт в экипировку."
 			: $"{budget.SupportPercent}% бюджета экипировки направлено на помощь: "
 				+ string.Join(" и ", new[] { budget.HealthSupport ? "здоровье" : null, budget.ManaSupport ? "мана" : null }.OfType<string>()), Gold);
+		if (_cache.Experience.Amount > 0)
+			Write(4, 8, $"Опыт +{_cache.Experience.Amount} | Уровень {_map.Player.Progression.Level} | Новых уровней: {_cache.Experience.LevelsGained} | Развитие на базе [P]", Accent);
 		if (hasEquipment)
 		{
 			Box(lines, 2, 10, 108, 15, "ОСНОВНОЙ ПРЕДМЕТ");

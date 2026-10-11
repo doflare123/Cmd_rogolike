@@ -1,5 +1,6 @@
 using CmdRoguelike.Domain.Entities;
 using CmdRoguelike.Domain.Items;
+using CmdRoguelike.Domain.Progression;
 
 namespace CmdRoguelike.Domain.Combat;
 
@@ -28,6 +29,9 @@ public static class CombatDeckBuilder
 		var cards = new List<CombatCard>();
 		cards.AddRange(Enumerable.Repeat(options.Attack, options.AttackCards));
 		cards.AddRange(Enumerable.Repeat(options.Defense, options.DefenseCards));
+		foreach (var node in DevelopmentTree.Nodes.Where(n => hero.Progression.LearnedNodes.Contains(n.Id)))
+			if (node.Cards is EquipmentCardGrant grant)
+				cards.AddRange(Enumerable.Repeat(grant.Card.FromDevelopment(node.Name), grant.Copies));
 		foreach (var item in hero.Inventory.Items.Where(item => item.Location == ItemLocation.Equipment
 			&& item.State == EquipmentState.Active).OrderBy(item => item.Slot))
 			foreach (var grant in item.Definition.CombatCards)

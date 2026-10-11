@@ -3,6 +3,7 @@ using CmdRoguelike.Domain.Campaign;
 using CmdRoguelike.Domain.Entities;
 using CmdRoguelike.Domain.Items;
 using CmdRoguelike.Domain.Stats;
+using CmdRoguelike.Domain.Progression;
 using Godot;
 
 namespace CmdRoguelike.World;
@@ -26,7 +27,7 @@ public sealed class CampaignSaveStore
 		if (new FileInfo(path).Length > 4_000_000) throw new InvalidDataException("Сохранение слишком большое.");
 		var data = JsonSerializer.Deserialize<CampaignSaveData>(File.ReadAllText(path), JsonOptions)
 			?? throw new InvalidDataException("Пустое сохранение.");
-		if (data.Version != 1 || data.Slot != slot) throw new InvalidDataException("Неподдерживаемая версия сохранения.");
+		if (data.Version is not 1 and not 2 || data.Slot != slot) throw new InvalidDataException("Неподдерживаемая версия сохранения.");
 		return data;
 	}
 	public CampaignSession Load(int slot)
@@ -36,6 +37,14 @@ public sealed class CampaignSaveStore
 			|| data.KnownItems.Distinct(StringComparer.Ordinal).Count() != data.KnownItems.Count
 			|| data.WorldTier is < 0 or > 1000 || data.OakVictories < 0 || data.FallenHeroes < 0
 			|| data.Hero is null) throw new InvalidDataException("Повреждено состояние прохождения.");
+		var unlocked = data.Version == 1 ? DevelopmentTree.Unlocks(data.OakVictories > 0) : data.UnlockedDevelopment;
+		if (unlocked is null || unlocked.Distinct(StringComparer.Ordinal).Count() != unlocked.Length
+			|| !unlocked.Order(StringComparer.Ordinal).SequenceEqual(DevelopmentTree.Unlocks(data.OakVictories > 0).Order(StringComparer.Ordinal))
+			|| data.Version == 2 && data.Hero.Development is null)
+			throw new InvalidDataException("Повреждены открытия развития.");
+		// Validate the saved investments even when a combat marker will replace this hero.
+		var validatedDevelopment = new PlayerCharacter(Vector2I.Zero);
+		validatedDevelopment.Progression.Restore(data.Hero.Development ?? new(0, Array.Empty<string>()), unlocked);
 		var layout = new BaseLayout(false);
 		layout.Restore(data.BaseObjects.Select(o => new BaseObject(o.Id, o.Kind, new(o.X, o.Y))));
 		var storage = new ItemStorage(data.StorageCapacity, data.StorageId);
@@ -54,6 +63,10 @@ public sealed class CampaignSaveStore
 			hero = new(Vector2I.Zero, id: saved.Id);
 			hero.Attributes.Restore(saved.Attributes);
 			hero.DerivedStats.Restore(saved.Stats);
+			if (saved.Attributes.Any(s => s.Modifiers.Any(m => m.SourceId.StartsWith(DevelopmentTree.SourcePrefix, StringComparison.Ordinal)))
+				|| saved.Stats.Any(s => s.Modifiers.Any(m => m.SourceId.StartsWith(DevelopmentTree.SourcePrefix, StringComparison.Ordinal))))
+				throw new InvalidDataException("Повторные бонусы развития.");
+			hero.Progression.Restore(saved.Development ?? new(0, Array.Empty<string>()), unlocked);
 			hero.Resources.SynchronizeMaximums(hero.DerivedStats.GetValue(DerivedStatId.MaxHealth), hero.DerivedStats.GetValue(DerivedStatId.MaxMana));
 			hero.Inventory.RestoreItems(saved.Items.Select(RestoreItem));
 			hero.Resources.Restore(saved.Health, saved.Mana);
@@ -63,7 +76,7 @@ public sealed class CampaignSaveStore
 			!= storage.Items.Count + hero.Inventory.Items.Count || storage.Id == hero.Id)
 			throw new InvalidDataException("Повторяющиеся владельцы или предметы.");
 		return new(slot, layout, storage, hero, lostHero ? BaseLayout.Entrance : new(data.HeroX, data.HeroY),
-			lostHero ? 0 : data.WorldTier, data.OakVictories, checked(data.FallenHeroes + (lostHero ? 1 : 0)), data.KnownItems);
+			lostHero ? 0 : data.WorldTier, data.OakVictories, checked(data.FallenHeroes + (lostHero ? 1 : 0)), data.KnownItems, unlocked);
 	}
 	public void Save(CampaignSession campaign)
 	{
@@ -77,9 +90,10 @@ public sealed class CampaignSaveStore
 			StorageId = campaign.Storage.Id, StorageCapacity = campaign.Storage.Capacity,
 			Storage = campaign.Storage.Items.Select(CaptureItem).ToList(),
 			KnownItems = campaign.KnownItems.ToList(),
+			UnlockedDevelopment = campaign.UnlockedDevelopment.ToArray(),
 			BaseObjects = campaign.Layout.Objects.Select(o => new SavedBaseObject(o.Id, o.Kind, o.Position.X, o.Position.Y)).ToList(),
-			Hero = new SavedHero(hero.Id, hero.Health, hero.Resources.Mana, hero.Attributes.Snapshot(),
-				hero.DerivedStats.Snapshot(), hero.Inventory.Items.Select(CaptureItem).ToArray()),
+			Hero = new SavedHero(hero.Id, hero.Health, hero.Resources.Mana, WithoutDevelopment(hero.Attributes.Snapshot()),
+				WithoutDevelopment(hero.DerivedStats.Snapshot()), hero.Inventory.Items.Select(CaptureItem).ToArray(), hero.Progression.Capture()),
 		};
 		Directory.CreateDirectory(_directory);
 		string path = PathFor(campaign.Slot), temp = path + ".tmp";
@@ -92,6 +106,8 @@ public sealed class CampaignSaveStore
 		File.Move(temp, path, overwrite: true);
 		File.Delete(path + ".combat");
 	}
+	private static StatSnapshot<T>[] WithoutDevelopment<T>(StatSnapshot<T>[] stats) where T : struct, Enum
+		=> stats.Select(s => s with { Modifiers = s.Modifiers.Where(m => !m.SourceId.StartsWith(DevelopmentTree.SourcePrefix, StringComparison.Ordinal)).ToArray() }).ToArray();
 
 	/// <summary>Only an encounter identity marker, never a game/world save. Prevents undoing a lethal battle by quitting.</summary>
 	public void MarkCombat(CampaignSession campaign, bool dangerous)
@@ -133,7 +149,7 @@ public sealed class CampaignSaveStore
 
 public sealed class CampaignSaveData
 {
-	public int Version { get; set; } = 1;
+	public int Version { get; set; } = 2;
 	public int Slot { get; set; }
 	public DateTimeOffset SavedAtUtc { get; set; }
 	public int WorldTier { get; set; }
@@ -146,11 +162,12 @@ public sealed class CampaignSaveData
 	public List<SavedItem> Storage { get; set; } = new();
 	public List<SavedBaseObject> BaseObjects { get; set; } = new();
 	public List<string> KnownItems { get; set; } = new();
+	public string[]? UnlockedDevelopment { get; set; }
 	public SavedHero? Hero { get; set; }
 }
 public sealed record SavedBaseObject(Guid Id, BaseObjectKind Kind, int X, int Y);
 public sealed record SavedHero(Guid Id, int Health, int Mana, StatSnapshot<AttributeId>[] Attributes,
-	StatSnapshot<DerivedStatId>[] Stats, SavedItem[] Items);
+	StatSnapshot<DerivedStatId>[] Stats, SavedItem[] Items, SavedDevelopment? Development = null);
 public sealed record SavedAffix(string Id, int Tier, int Value);
 public sealed record SavedItem(Guid Id, Guid OwnerId, string DefinitionId, ItemRarity Rarity, int Level, int Quantity,
 	ItemLocation Location, EquipmentSlot? Slot, EquipmentState State, SavedAffix[] Affixes);
